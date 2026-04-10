@@ -1,3 +1,65 @@
+<script lang="ts">
+	import { goto } from '$app/navigation';
+	import { db, seedRivers, seedEntries } from '$lib/db/index.js';
+	import { fetchUsgsFlow } from '$lib/api/usgs.js';
+	import RiverAutocomplete from '$lib/components/RiverAutocomplete.svelte';
+	import type { River, JournalEntry } from '$lib/types.js';
+	import { onMount } from 'svelte';
+
+	let selectedRiver = $state<River | null>(null);
+	let date = $state(new Date().toISOString().slice(0, 10));
+	let flow = $state<number | null>(null);
+	let description = $state('');
+	let fetchingFlow = $state(false);
+	let saving = $state(false);
+
+	onMount(async () => {
+		await seedRivers();
+		await seedEntries();
+	});
+
+	async function fetchFlow() {
+		if (!selectedRiver?.externalGaugeId || !date || selectedRiver.externalGaugeSource !== 'usgs') return;
+		fetchingFlow = true;
+		const result = await fetchUsgsFlow(selectedRiver.externalGaugeId, date);
+		if (result !== null) flow = Math.round(result);
+		fetchingFlow = false;
+	}
+
+	// Auto-fetch flow when both river and date are set
+	$effect(() => {
+		if (selectedRiver?.externalGaugeId && selectedRiver.externalGaugeSource === 'usgs' && date) {
+			fetchFlow();
+		}
+	});
+
+	async function save() {
+		if (!selectedRiver || !date) return;
+		saving = true;
+
+		const now = new Date().toISOString();
+		const entry: JournalEntry = {
+			date,
+			riverId: selectedRiver.id,
+			flow: flow ?? 0,
+			description,
+			createdAt: now,
+			updatedAt: now,
+			syncStatus: 'local'
+		};
+
+		await db.entries.add(entry);
+		saving = false;
+		goto('/entries');
+	}
+
+	let canFetchFlow = $derived(
+		selectedRiver?.externalGaugeId &&
+		selectedRiver?.externalGaugeSource === 'usgs' &&
+		date
+	);
+</script>
+
 <h1 class="text-3xl font-bold mb-6">Log a River Day</h1>
 
 <div class="card bg-base-100 shadow">
@@ -6,7 +68,16 @@
 			<label class="label" for="river">
 				<span class="label-text">River</span>
 			</label>
-			<input type="text" id="river" class="input input-bordered" placeholder="Search rivers..." />
+			<RiverAutocomplete bind:value={selectedRiver} />
+			{#if selectedRiver}
+				<label class="label">
+					<span class="label-text-alt text-base-content/50">
+						{selectedRiver.state}
+						{#if selectedRiver.classRating}· Class {selectedRiver.classRating}{/if}
+						{#if selectedRiver.externalGaugeId}· Has gauge ({selectedRiver.externalGaugeSource}){/if}
+					</span>
+				</label>
+			{/if}
 		</div>
 
 		<div class="grid grid-cols-2 gap-4 mb-4">
@@ -14,13 +85,37 @@
 				<label class="label" for="date">
 					<span class="label-text">Date</span>
 				</label>
-				<input type="date" id="date" class="input input-bordered" />
+				<input type="date" id="date" class="input input-bordered" bind:value={date} />
 			</div>
 			<div class="form-control">
 				<label class="label" for="flow">
 					<span class="label-text">Flow (CFS)</span>
 				</label>
-				<input type="number" id="flow" class="input input-bordered" placeholder="0" />
+				<div class="join w-full">
+					<input
+						type="number"
+						id="flow"
+						class="input input-bordered join-item w-full"
+						placeholder="0"
+						bind:value={flow}
+					/>
+					{#if canFetchFlow}
+						<button
+							type="button"
+							class="btn join-item btn-outline"
+							class:loading={fetchingFlow}
+							disabled={fetchingFlow}
+							onclick={fetchFlow}
+						>
+							{fetchingFlow ? '' : '⟳'}
+						</button>
+					{/if}
+				</div>
+				{#if fetchingFlow}
+					<label class="label">
+						<span class="label-text-alt">Fetching from USGS...</span>
+					</label>
+				{/if}
 			</div>
 		</div>
 
@@ -28,9 +123,21 @@
 			<label class="label" for="description">
 				<span class="label-text">Notes</span>
 			</label>
-			<textarea id="description" class="textarea textarea-bordered" rows="4" placeholder="How was the run?"></textarea>
+			<textarea
+				id="description"
+				class="textarea textarea-bordered"
+				rows="4"
+				placeholder="How was the run?"
+				bind:value={description}
+			></textarea>
 		</div>
 
-		<button class="btn btn-primary w-full" disabled>Save Entry (Phase 2)</button>
+		<button
+			class="btn btn-primary w-full"
+			disabled={!selectedRiver || !date || saving}
+			onclick={save}
+		>
+			{saving ? 'Saving...' : 'Save Entry'}
+		</button>
 	</div>
 </div>
