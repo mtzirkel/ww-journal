@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { liveQuery } from 'dexie';
 	import { db, seedRivers, seedEntries } from '$lib/db/index.js';
-	import type { River, JournalEntry } from '$lib/types.js';
+	import type { River, JournalEntry, Trip } from '$lib/types.js';
 	import { onMount } from 'svelte';
 
-	let entries = $state<(JournalEntry & { river?: River })[]>([]);
+	let entries = $state<(JournalEntry & { river?: River; trip?: Trip })[]>([]);
 	let rivers = $state<Map<number, River>>(new Map());
+	let trips = $state<Map<number, Trip>>(new Map());
 	let filterRiverId = $state<number | null>(null);
 	let loaded = $state(false);
 
@@ -18,10 +19,12 @@
 
 			const allRivers = await db.rivers.toArray();
 			rivers = new Map(allRivers.map((r) => [r.id, r]));
+			const allTrips = await db.trips.toArray();
+			trips = new Map(allTrips.map((t) => [t.id!, t]));
 
 			const observable = liveQuery(async () => {
 				const all = await db.entries.orderBy('date').reverse().toArray();
-				return all.map((e) => ({ ...e, river: rivers.get(e.riverId) }));
+				return all.map((e) => ({ ...e, river: rivers.get(e.riverId), trip: e.tripId ? trips.get(e.tripId) : undefined }));
 			});
 
 			subscription = observable.subscribe((value) => {
@@ -89,6 +92,9 @@
 									<span class="font-normal text-base-content/50"> — {entry.river.section}</span>
 								{/if}
 							</h3>
+							{#if entry.trip}
+								<span class="badge badge-sm badge-outline mt-1">⛰ {entry.trip.name}</span>
+							{/if}
 							{#if entry.description}
 								<p class="text-sm text-base-content/60 mt-1 line-clamp-1">{entry.description}</p>
 							{/if}

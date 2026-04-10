@@ -22,7 +22,18 @@ export interface JournalEntry {
 	riverId: number;
 	flow: number;
 	description: string;
+	tripId: number | null;
 	createdAt: string;
 	updatedAt: string;
 	syncStatus: 'local' | 'synced' | 'pending';
+}
+
+export interface Trip {
+	id?: number;
+	name: string;
+	description: string;
+	startDate: string | null;
+	endDate: string | null;
+	createdAt: string;
+	updatedAt: string;
 }

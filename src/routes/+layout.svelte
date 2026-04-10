@@ -8,6 +8,7 @@
 		{ href: '/', label: 'Dashboard', icon: '◩' },
 		{ href: '/entries', label: 'Entries', icon: '☰' },
 		{ href: '/entries/new', label: 'Log', icon: '＋' },
+		{ href: '/trips', label: 'Trips', icon: '⛰' },
 		{ href: '/map', label: 'Map', icon: '◎' },
 		{ href: '/settings', label: 'Settings', icon: '⚙' }
 	];

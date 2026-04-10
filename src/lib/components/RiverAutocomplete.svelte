@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { db } from '$lib/db/index.js';
 	import type { River } from '$lib/types.js';
+	import AddRiverModal from './AddRiverModal.svelte';
 
 	let {
 		value = $bindable<River | null>(null),
@@ -14,6 +15,7 @@
 	let results = $state<River[]>([]);
 	let open = $state(false);
 	let selectedIndex = $state(-1);
+	let showAddModal = $state(false);
 	let inputEl: HTMLInputElement;
 
 	async function search(q: string) {
@@ -41,19 +43,30 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
-		if (!open || results.length === 0) return;
+		if (!open) return;
+		const total = results.length + 1; // +1 for "Add new" option
 		if (e.key === 'ArrowDown') {
 			e.preventDefault();
-			selectedIndex = Math.min(selectedIndex + 1, results.length - 1);
+			selectedIndex = Math.min(selectedIndex + 1, total - 1);
 		} else if (e.key === 'ArrowUp') {
 			e.preventDefault();
 			selectedIndex = Math.max(selectedIndex - 1, 0);
-		} else if (e.key === 'Enter' && selectedIndex >= 0) {
+		} else if (e.key === 'Enter') {
 			e.preventDefault();
-			select(results[selectedIndex]);
+			if (selectedIndex === results.length) {
+				showAddModal = true;
+				open = false;
+			} else if (selectedIndex >= 0 && selectedIndex < results.length) {
+				select(results[selectedIndex]);
+			}
 		} else if (e.key === 'Escape') {
 			open = false;
 		}
+	}
+
+	function handleNewRiver(river: River) {
+		showAddModal = false;
+		select(river);
 	}
 
 	$effect(() => {
@@ -79,7 +92,7 @@
 		autocomplete="off"
 	/>
 
-	{#if open && results.length > 0}
+	{#if open && query.length >= 2}
 		<ul class="absolute z-50 top-full left-0 right-0 mt-1 bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
 			{#each results as river, i}
 				<li>
@@ -101,6 +114,25 @@
 					</button>
 				</li>
 			{/each}
+			<li>
+				<button
+					type="button"
+					class="w-full text-left px-4 py-2 text-sm hover:bg-base-200 transition-colors border-t border-base-300 font-medium"
+					class:bg-base-200={selectedIndex === results.length}
+					style="color: var(--color-river)"
+					onmousedown={() => { showAddModal = true; open = false; }}
+				>
+					+ Add "{query}" as new river
+				</button>
+			</li>
 		</ul>
 	{/if}
 </div>
+
+{#if showAddModal}
+	<AddRiverModal
+		initialName={query}
+		onclose={() => showAddModal = false}
+		onsave={handleNewRiver}
+	/>
+{/if}

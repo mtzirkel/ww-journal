@@ -3,19 +3,22 @@
 	import { db, seedRivers, seedEntries } from '$lib/db/index.js';
 	import { fetchUsgsFlow } from '$lib/api/usgs.js';
 	import RiverAutocomplete from '$lib/components/RiverAutocomplete.svelte';
-	import type { River, JournalEntry } from '$lib/types.js';
+	import type { River, JournalEntry, Trip } from '$lib/types.js';
 	import { onMount } from 'svelte';
 
 	let selectedRiver = $state<River | null>(null);
 	let date = $state(new Date().toISOString().slice(0, 10));
 	let flow = $state<number | null>(null);
 	let description = $state('');
+	let tripId = $state<number | null>(null);
+	let trips = $state<Trip[]>([]);
 	let fetchingFlow = $state(false);
 	let saving = $state(false);
 
 	onMount(async () => {
 		await seedRivers();
 		await seedEntries();
+		trips = await db.trips.orderBy('name').toArray();
 	});
 
 	async function fetchFlow() {
@@ -43,6 +46,7 @@
 			riverId: selectedRiver.id,
 			flow: flow ?? 0,
 			description,
+			tripId,
 			createdAt: now,
 			updatedAt: now,
 			syncStatus: 'local'
@@ -119,18 +123,32 @@
 			</div>
 		</div>
 
-		<div class="form-control mb-6">
+		<div class="form-control mb-4 w-full">
 			<label class="label" for="description">
 				<span class="label-text">Notes</span>
 			</label>
 			<textarea
 				id="description"
-				class="textarea textarea-bordered"
+				class="textarea textarea-bordered w-full"
 				rows="4"
 				placeholder="How was the run?"
 				bind:value={description}
 			></textarea>
 		</div>
+
+		{#if trips.length > 0}
+			<div class="form-control mb-6">
+				<label class="label" for="trip">
+					<span class="label-text">Trip (optional)</span>
+				</label>
+				<select id="trip" class="select select-bordered w-full" bind:value={tripId}>
+					<option value={null}>No trip</option>
+					{#each trips as t}
+						<option value={t.id}>{t.name}</option>
+					{/each}
+				</select>
+			</div>
+		{/if}
 
 		<button
 			class="btn btn-primary w-full"

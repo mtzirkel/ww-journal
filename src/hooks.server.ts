@@ -11,6 +11,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 		return resolve(event);
 	}
 
+	// Dev bypass — skip auth entirely in development
+	if (env.DEV_BYPASS_AUTH === 'true') {
+		event.locals.user = {
+			id: 'dev-user',
+			username: 'dev',
+			isAdmin: true,
+			apps: [{ slug: 'ww-journal', name: 'WW Journal', role: 'admin' }]
+		};
+		return resolve(event);
+	}
+
 	// Check auth cookie
 	const token = event.cookies.get('noegos_auth');
 	if (token) {

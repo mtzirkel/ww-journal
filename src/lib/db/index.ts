@@ -1,14 +1,25 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { River, JournalEntry } from '$lib/types.js';
+import type { River, JournalEntry, Trip } from '$lib/types.js';
 
 const db = new Dexie('ww-journal') as Dexie & {
 	rivers: EntityTable<River, 'id'>;
 	entries: EntityTable<JournalEntry, 'id'>;
+	trips: EntityTable<Trip, 'id'>;
 };
 
 db.version(1).stores({
 	rivers: 'id, riverName, state, externalGaugeId, [riverName+state]',
 	entries: '++id, date, riverId, syncStatus'
+});
+
+db.version(2).stores({
+	rivers: 'id, riverName, state, externalGaugeId, [riverName+state]',
+	entries: '++id, date, riverId, tripId, syncStatus',
+	trips: '++id, name, startDate'
+}).upgrade(tx => {
+	return tx.table('entries').toCollection().modify(entry => {
+		if (entry.tripId === undefined) entry.tripId = null;
+	});
 });
 
 export { db };
@@ -37,6 +48,7 @@ export async function seedEntries() {
 		riverId: e.riverId,
 		flow: e.flow,
 		description: e.description,
+		tripId: null,
 		createdAt: now,
 		updatedAt: now,
 		syncStatus: 'local' as const
