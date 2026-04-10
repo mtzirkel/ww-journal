@@ -10,7 +10,9 @@
 		"prepare": "husky",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"test": "vitest run"
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"test:mutation": "npx stryker run"
 	},
 	"devDependencies": {
 		"@stryker-mutator/core": "^9.6.1",
