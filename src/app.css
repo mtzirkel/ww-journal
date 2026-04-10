@@ -1,0 +1,10 @@
+@import 'tailwindcss';
+@plugin 'daisyui' {
+  themes: light --default, dark;
+}
+
+@theme {
+  --color-river: #238c91;
+  --color-river-light: #2db3b9;
+  --color-river-dark: #1a6a6e;
+}
