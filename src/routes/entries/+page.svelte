@@ -6,7 +6,7 @@
 
 	let entries = $state<(JournalEntry & { river?: River; trip?: Trip })[]>([]);
 	let rivers = $state<Map<number, River>>(new Map());
-	let trips = $state<Map<number, Trip>>(new Map());
+	let trips = $state<Map<string, Trip>>(new Map());
 	let filterRiverId = $state<number | null>(null);
 	let loaded = $state(false);
 
@@ -20,11 +20,13 @@
 			const allRivers = await db.rivers.toArray();
 			rivers = new Map(allRivers.map((r) => [r.id, r]));
 			const allTrips = await db.trips.toArray();
-			trips = new Map(allTrips.map((t) => [t.id!, t]));
+			trips = new Map(allTrips.map((t) => [t.id, t]));
 
 			const observable = liveQuery(async () => {
 				const all = await db.entries.orderBy('date').reverse().toArray();
-				return all.map((e) => ({ ...e, river: rivers.get(e.riverId), trip: e.tripId ? trips.get(e.tripId) : undefined }));
+				return all
+					.filter((e) => !e.deletedAt)
+					.map((e) => ({ ...e, river: rivers.get(e.riverId), trip: e.tripId ? trips.get(e.tripId) : undefined }));
 			});
 
 			subscription = observable.subscribe((value) => {
@@ -94,6 +96,16 @@
 							</h3>
 							{#if entry.trip}
 								<span class="badge badge-sm badge-outline mt-1">⛰ {entry.trip.name}</span>
+							{/if}
+							{#if entry.tags && entry.tags.length > 0}
+								<div class="flex flex-wrap gap-1 mt-1">
+									{#each entry.tags.slice(0, 3) as tag}
+										<span class="badge badge-xs badge-ghost">{tag.value}</span>
+									{/each}
+									{#if entry.tags.length > 3}
+										<span class="badge badge-xs badge-ghost">+{entry.tags.length - 3}</span>
+									{/if}
+								</div>
 							{/if}
 							{#if entry.description}
 								<p class="text-sm text-base-content/60 mt-1 line-clamp-1">{entry.description}</p>

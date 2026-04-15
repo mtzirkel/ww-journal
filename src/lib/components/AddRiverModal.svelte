@@ -34,6 +34,7 @@
 		const maxId = await db.rivers.orderBy('id').last();
 		const newId = (maxId?.id ?? 10000) + 1;
 
+		const now = new Date().toISOString();
 		const river: River = {
 			id: newId,
 			riverName: riverName.trim(),
@@ -49,7 +50,11 @@
 			lat: null,
 			lon: null,
 			altName: null,
-			abstract: null
+			abstract: null,
+			createdAt: now,
+			updatedAt: now,
+			deletedAt: null,
+			dirty: true
 		};
 
 		await db.rivers.add(river);

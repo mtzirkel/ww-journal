@@ -14,26 +14,55 @@ export interface River {
 	lon: number | null;
 	altName: string | null;
 	abstract: string | null;
+	createdAt?: string;
+	updatedAt?: string;
+	deletedAt?: string | null;
+	dirty?: boolean;
 }
 
 export interface JournalEntry {
-	id?: number;
+	id: string;
 	date: string;
 	riverId: number;
 	flow: number;
 	description: string;
-	tripId: number | null;
+	tripId: string | null;
+	tags: EntryTag[];
 	createdAt: string;
 	updatedAt: string;
-	syncStatus: 'local' | 'synced' | 'pending';
+	deletedAt: string | null;
+	dirty: boolean;
+}
+
+export interface EntryTag {
+	category: string;
+	value: string;
+}
+
+export interface TagCategory {
+	id: string;
+	name: string;
+	icon: string;
+	values: string[];
+	createdAt: string;
+	updatedAt: string;
+	deletedAt: string | null;
+	dirty: boolean;
 }
 
 export interface Trip {
-	id?: number;
+	id: string;
 	name: string;
 	description: string;
 	startDate: string | null;
 	endDate: string | null;
 	createdAt: string;
 	updatedAt: string;
+	deletedAt: string | null;
+	dirty: boolean;
+}
+
+export interface SyncSetting {
+	key: string;
+	value: string;
 }

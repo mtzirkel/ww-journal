@@ -2,6 +2,9 @@
 	import '../app.css';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
+	import { onMount } from 'svelte';
+	import { sync, syncStore } from '$lib/sync.svelte.js';
+	import { getLastSyncedAt } from '$lib/db/index.js';
 	let { children, data } = $props();
 
 	const navItems = [
@@ -33,6 +36,42 @@
 		if (href === '/') return page.url.pathname === '/';
 		return page.url.pathname.startsWith(href);
 	}
+
+	onMount(() => {
+		// Initialize sync store from localStorage
+		(async () => {
+			syncStore.lastSyncedAt = await getLastSyncedAt();
+			await syncStore.refreshPendingCount();
+			// Initial sync on app load
+			sync();
+			// Request persistent storage so the browser doesn't evict our data
+			if (navigator.storage?.persist) {
+				navigator.storage.persist().then((granted) => {
+					console.log('[ww-journal] persistent storage granted:', granted);
+				});
+			}
+		})();
+
+		const onOnline = () => sync();
+		const onFocus = () => sync();
+		const onVisibility = () => {
+			if (document.visibilityState === 'visible') sync();
+		};
+
+		window.addEventListener('online', onOnline);
+		window.addEventListener('focus', onFocus);
+		document.addEventListener('visibilitychange', onVisibility);
+
+		return () => {
+			window.removeEventListener('online', onOnline);
+			window.removeEventListener('focus', onFocus);
+			document.removeEventListener('visibilitychange', onVisibility);
+		};
+	});
+
+	function manualSync() {
+		sync();
+	}
 </script>
 
 <svelte:head>
@@ -62,7 +101,30 @@
 				</a>
 			{/each}
 		</nav>
-		<div class="p-4 border-t border-base-300">
+		<div class="p-4 border-t border-base-300 space-y-2">
+			<button
+				type="button"
+				class="flex items-center gap-2 text-xs w-full hover:opacity-70 transition-opacity"
+				onclick={manualSync}
+				title={syncStore.lastError ?? 'Click to sync now'}
+			>
+				{#if syncStore.state === 'syncing'}
+					<span class="loading loading-spinner loading-xs"></span>
+					<span>Syncing...</span>
+				{:else if syncStore.state === 'error'}
+					<span class="text-error">⚠</span>
+					<span>Sync error</span>
+				{:else if syncStore.state === 'offline'}
+					<span>⊘</span>
+					<span>Offline</span>
+				{:else if syncStore.pendingCount > 0}
+					<span>⇅</span>
+					<span>{syncStore.pendingCount} unsynced</span>
+				{:else}
+					<span class="text-success">✓</span>
+					<span>Synced</span>
+				{/if}
+			</button>
 			<label class="flex items-center gap-2 cursor-pointer">
 				<span class="text-xs">☀</span>
 				<input type="checkbox" class="toggle toggle-sm" bind:checked={dark} />
@@ -75,6 +137,17 @@
 	<header class="md:hidden sticky top-0 z-40 bg-base-100 shadow-sm px-4 py-3 flex items-center justify-between">
 		<h1 class="text-lg font-bold" style="color: var(--color-river)">WW Journal</h1>
 		<div class="flex items-center gap-3">
+			<button type="button" class="text-xs flex items-center gap-1" onclick={manualSync} title={syncStore.lastError ?? 'Tap to sync'}>
+				{#if syncStore.state === 'syncing'}
+					<span class="loading loading-spinner loading-xs"></span>
+				{:else if syncStore.state === 'error'}
+					<span class="text-error">⚠</span>
+				{:else if syncStore.pendingCount > 0}
+					<span>⇅ {syncStore.pendingCount}</span>
+				{:else}
+					<span class="text-success">✓</span>
+				{/if}
+			</button>
 			<label class="flex items-center gap-1 cursor-pointer">
 				<span class="text-xs">☀</span>
 				<input type="checkbox" class="toggle toggle-xs" bind:checked={dark} />

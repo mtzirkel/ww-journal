@@ -34,6 +34,7 @@
 	let loaded = $state(false);
 
 	let selectedRiverName = $state<string | null>(null);
+	let selectedEntryId = $state<string | null>(null);
 
 	onMount(() => {
 		let subscription: { unsubscribe: () => void } | undefined;
@@ -48,7 +49,7 @@
 			allRivers = rivers;
 
 			const observable = liveQuery(async () => {
-				const entries = await db.entries.toArray();
+				const entries = (await db.entries.toArray()).filter((e) => !e.deletedAt);
 				const now = new Date();
 				const yearStr = now.getFullYear().toString();
 				const monthStr = `${yearStr}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -132,6 +133,26 @@
 	function chartY(flow: number) {
 		return PAD_T + PLOT_H - ((flow - chartMinFlow) / chartFlowRange) * PLOT_H;
 	}
+
+	let selectedEntry = $derived(selectedEntryId ? allEntries.find((e) => e.id === selectedEntryId) ?? null : null);
+	let selectedEntryRiver = $derived(selectedEntry ? allRivers.get(selectedEntry.riverId) ?? null : null);
+
+	// Year in review stats
+	let yearEntries = $derived(allEntries.filter((e) => e.date.startsWith(new Date().getFullYear().toString())));
+	let yearRiverCount = $derived(new Set(yearEntries.map((e) => e.riverId)).size);
+	let yearTopRiver = $derived(() => {
+		if (yearEntries.length === 0) return null;
+		const counts = new Map<number, number>();
+		for (const e of yearEntries) counts.set(e.riverId, (counts.get(e.riverId) ?? 0) + 1);
+		const topId = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+		const r = topId ? allRivers.get(topId) : null;
+		return r ? (r.section ? `${r.riverName} — ${r.section}` : r.riverName) : null;
+	});
+
+	// Month in review stats
+	let monthStr = $derived(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
+	let monthEntries = $derived(allEntries.filter((e) => e.date.startsWith(monthStr)));
+	let monthRiverCount = $derived(new Set(monthEntries.map((e) => e.riverId)).size);
 </script>
 
 <h1 class="text-3xl font-bold mb-6">Dashboard</h1>
@@ -154,6 +175,63 @@
 		<div class="stat-value text-2xl">{loaded ? riverCount : '—'}</div>
 	</div>
 </div>
+
+{#if loaded && (yearEntries.length > 0 || monthEntries.length > 0)}
+	<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+		<!-- Year in Review -->
+		<div class="card bg-base-100 shadow">
+			<div class="card-body py-4">
+				<h3 class="card-title text-sm">{new Date().getFullYear()} Year in Review</h3>
+				{#if yearEntries.length > 0}
+					<div class="grid grid-cols-3 gap-2 mt-2">
+						<div class="text-center">
+							<div class="text-2xl font-bold" style="color: var(--color-river)">{yearEntries.length}</div>
+							<div class="text-xs text-base-content/50">Days</div>
+						</div>
+						<div class="text-center">
+							<div class="text-2xl font-bold">{yearRiverCount}</div>
+							<div class="text-xs text-base-content/50">Rivers</div>
+						</div>
+						<div class="text-center">
+							<div class="text-lg font-bold">{Math.round(yearEntries.reduce((s, e) => s + e.flow, 0) / yearEntries.length)}</div>
+							<div class="text-xs text-base-content/50">Avg CFS</div>
+						</div>
+					</div>
+					{#if yearTopRiver()}
+						<p class="text-xs text-base-content/50 mt-2">Most paddled: <strong>{yearTopRiver()}</strong></p>
+					{/if}
+				{:else}
+					<p class="text-sm text-base-content/40 mt-2">No entries this year yet. Get on the water!</p>
+				{/if}
+			</div>
+		</div>
+
+		<!-- Month in Review -->
+		<div class="card bg-base-100 shadow">
+			<div class="card-body py-4">
+				<h3 class="card-title text-sm">{new Date().toLocaleDateString('en-US', { month: 'long' })} Review</h3>
+				{#if monthEntries.length > 0}
+					<div class="grid grid-cols-3 gap-2 mt-2">
+						<div class="text-center">
+							<div class="text-2xl font-bold" style="color: var(--color-river)">{monthEntries.length}</div>
+							<div class="text-xs text-base-content/50">Days</div>
+						</div>
+						<div class="text-center">
+							<div class="text-2xl font-bold">{monthRiverCount}</div>
+							<div class="text-xs text-base-content/50">Rivers</div>
+						</div>
+						<div class="text-center">
+							<div class="text-lg font-bold">{Math.round(monthEntries.reduce((s, e) => s + e.flow, 0) / monthEntries.length)}</div>
+							<div class="text-xs text-base-content/50">Avg CFS</div>
+						</div>
+					</div>
+				{:else}
+					<p class="text-sm text-base-content/40 mt-2">No entries this month yet.</p>
+				{/if}
+			</div>
+		</div>
+	</div>
+{/if}
 
 {#if loaded && groupedRivers.length > 0}
 	<!-- Flow timeline panel above the river list -->
@@ -216,10 +294,19 @@
 
 							<!-- Data points by section -->
 							{#each chartSorted as entry, i}
-								<circle cx={chartX(i)} cy={chartY(entry.flow)} r="6"
-									fill={selectedGroup?.sections.find(s => s.riverId === entry.riverId)?.color ?? 'var(--color-river)'}
-									stroke="white" stroke-width="1.5"
+								<!-- Hit target -->
+								<circle cx={chartX(i)} cy={chartY(entry.flow)} r="14"
+									fill="transparent" class="cursor-pointer"
+									onclick={() => selectedEntryId = selectedEntryId === entry.id ? null : entry.id}
+								/>
+								<!-- Visible dot -->
+								<circle cx={chartX(i)} cy={chartY(entry.flow)}
+									r={selectedEntryId === entry.id ? 8 : 6}
+									fill={selectedEntryId === entry.id ? '#f59e0b' : (selectedGroup?.sections.find(s => s.riverId === entry.riverId)?.color ?? 'var(--color-river)')}
+									stroke={selectedEntryId === entry.id ? '#d97706' : 'white'}
+									stroke-width="1.5"
 									class="cursor-pointer"
+									onclick={() => selectedEntryId = selectedEntryId === entry.id ? null : entry.id}
 								/>
 								<text x={chartX(i)} y={CHART_H - 8} text-anchor="middle"
 									class="fill-base-content/50 text-[8px]"
@@ -231,6 +318,32 @@
 							{/each}
 						</svg>
 					</div>
+
+					<!-- Selected entry detail -->
+					{#if selectedEntry}
+						<div class="bg-base-200 rounded-lg p-4 mt-4">
+							<div class="flex justify-between items-start">
+								<div>
+									<p class="font-bold">
+										{selectedEntryRiver?.riverName ?? 'Unknown'}
+										{#if selectedEntryRiver?.section}
+											<span class="font-normal text-base-content/50"> — {selectedEntryRiver.section}</span>
+										{/if}
+									</p>
+									<p class="text-sm text-base-content/50">
+										{new Date(selectedEntry.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+										&middot; {Math.round(selectedEntry.flow)} CFS
+									</p>
+								</div>
+								<a href="/entries/{selectedEntry.id}" class="btn btn-ghost btn-xs">View &rarr;</a>
+							</div>
+							{#if selectedEntry.description}
+								<p class="mt-3 text-sm whitespace-pre-wrap">{selectedEntry.description}</p>
+							{:else}
+								<p class="mt-3 text-sm text-base-content/40 italic">No notes for this day.</p>
+							{/if}
+						</div>
+					{/if}
 				</div>
 			</div>
 		</div>

@@ -5,6 +5,7 @@
 	import { db, seedRivers } from '$lib/db/index.js';
 	import type { Trip, JournalEntry, River } from '$lib/types.js';
 	import { onMount } from 'svelte';
+	import { sync, syncStore } from '$lib/sync.svelte.js';
 
 	let trip = $state<Trip | null>(null);
 	let entries = $state<(JournalEntry & { river?: River })[]>([]);
@@ -22,11 +23,12 @@
 			const allRivers = await db.rivers.toArray();
 			rivers = new Map(allRivers.map((r) => [r.id, r]));
 
-			const tripId = parseInt(page.params.id ?? '0');
+			const tripId = page.params.id ?? '';
 			trip = await db.trips.get(tripId) ?? null;
 
 			const observable = liveQuery(async () => {
-				return db.entries.where('tripId').equals(tripId).sortBy('date');
+				const all = await db.entries.where('tripId').equals(tripId).sortBy('date');
+				return all.filter((e) => !e.deletedAt);
 			});
 
 			subscription = observable.subscribe((value) => {
@@ -39,7 +41,7 @@
 					const startDate = dates[0];
 					const endDate = dates[dates.length - 1];
 					if (trip.startDate !== startDate || trip.endDate !== endDate) {
-						db.trips.update(tripId, { startDate, endDate });
+						db.trips.update(tripId, { startDate, endDate, updatedAt: new Date().toISOString(), dirty: true });
 					}
 				}
 			});
@@ -60,21 +62,29 @@
 		await db.trips.update(trip.id, {
 			name: editName.trim(),
 			description: editDescription.trim(),
-			updatedAt: new Date().toISOString()
+			updatedAt: new Date().toISOString(),
+			dirty: true
 		});
 		trip = await db.trips.get(trip.id) ?? null;
 		editing = false;
+		await syncStore.refreshPendingCount();
+		sync();
 	}
 
 	async function deleteTrip() {
 		if (!trip?.id || !confirm('Delete this trip? Entries will be unlinked, not deleted.')) return;
-		await db.entries.where('tripId').equals(trip.id).modify({ tripId: null });
-		await db.trips.delete(trip.id);
+		const now = new Date().toISOString();
+		await db.entries.where('tripId').equals(trip.id).modify({ tripId: null, dirty: true, updatedAt: now });
+		await db.trips.update(trip.id, { deletedAt: now, updatedAt: now, dirty: true });
+		await syncStore.refreshPendingCount();
+		sync();
 		goto('/trips');
 	}
 
-	async function removeEntry(entryId: number) {
-		await db.entries.update(entryId, { tripId: null });
+	async function removeEntry(entryId: string) {
+		await db.entries.update(entryId, { tripId: null, dirty: true, updatedAt: new Date().toISOString() });
+		await syncStore.refreshPendingCount();
+		sync();
 	}
 
 	// Stats

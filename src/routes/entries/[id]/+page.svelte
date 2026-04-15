@@ -6,6 +6,7 @@
 	import RiverAutocomplete from '$lib/components/RiverAutocomplete.svelte';
 	import type { River, JournalEntry } from '$lib/types.js';
 	import { onMount } from 'svelte';
+	import { sync, syncStore } from '$lib/sync.svelte.js';
 
 	let entry = $state<JournalEntry | null>(null);
 	let river = $state<River | null>(null);
@@ -21,7 +22,7 @@
 
 	onMount(async () => {
 		await seedRivers();
-		const id = parseInt(page.params.id ?? '0');
+		const id = page.params.id ?? '';
 		entry = await db.entries.get(id) ?? null;
 		if (entry) {
 			river = await db.rivers.get(entry.riverId) ?? null;
@@ -45,17 +46,27 @@
 			date: editDate,
 			flow: editFlow ?? 0,
 			description: editDescription,
-			updatedAt: new Date().toISOString()
+			updatedAt: new Date().toISOString(),
+			dirty: true
 		});
 		entry = await db.entries.get(entry.id) ?? null;
 		river = editRiver;
 		editing = false;
 		saving = false;
+		await syncStore.refreshPendingCount();
+		sync();
 	}
 
 	async function deleteEntry() {
 		if (!entry?.id || !confirm('Delete this entry?')) return;
-		await db.entries.delete(entry.id);
+		// Soft delete — set deletedAt and dirty so sync propagates the deletion
+		await db.entries.update(entry.id, {
+			deletedAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString(),
+			dirty: true
+		});
+		await syncStore.refreshPendingCount();
+		sync();
 		goto('/entries');
 	}
 
@@ -148,6 +159,16 @@
 						{river.state}
 						{#if river.classRating}· Class {river.classRating}{/if}
 					</p>
+				</div>
+			{/if}
+
+			{#if entry.tags && entry.tags.length > 0}
+				<div class="mt-4 flex flex-wrap gap-2">
+					{#each entry.tags as tag}
+						<span class="badge badge-outline gap-1">
+							<span class="text-base-content/50">{tag.category}:</span> {tag.value}
+						</span>
+					{/each}
 				</div>
 			{/if}
 

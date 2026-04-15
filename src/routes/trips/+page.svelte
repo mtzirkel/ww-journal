@@ -3,6 +3,7 @@
 	import { db } from '$lib/db/index.js';
 	import type { Trip } from '$lib/types.js';
 	import { onMount } from 'svelte';
+	import { sync, syncStore } from '$lib/sync.svelte.js';
 
 	let trips = $state<(Trip & { entryCount: number })[]>([]);
 	let loaded = $state(false);
@@ -17,11 +18,12 @@
 
 		(async () => {
 			const observable = liveQuery(async () => {
-				const allTrips = await db.trips.orderBy('startDate').reverse().toArray();
+				const allTrips = (await db.trips.toArray()).filter((t) => !t.deletedAt);
+				allTrips.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
 				const withCounts = await Promise.all(
 					allTrips.map(async (t) => {
-						const entryCount = await db.entries.where('tripId').equals(t.id!).count();
-						return { ...t, entryCount };
+						const matching = await db.entries.where('tripId').equals(t.id).filter((e) => !e.deletedAt).count();
+						return { ...t, entryCount: matching };
 					})
 				);
 				return withCounts;
@@ -41,23 +43,33 @@
 		saving = true;
 		const now = new Date().toISOString();
 		await db.trips.add({
+			id: crypto.randomUUID(),
 			name: newName.trim(),
 			description: newDescription.trim(),
 			startDate: null,
 			endDate: null,
 			createdAt: now,
-			updatedAt: now
+			updatedAt: now,
+			deletedAt: null,
+			dirty: true
 		});
 		newName = '';
 		newDescription = '';
 		showCreate = false;
 		saving = false;
+		await syncStore.refreshPendingCount();
+		sync();
 	}
 
-	async function deleteTrip(id: number) {
+	async function deleteTrip(id: string) {
 		if (!confirm('Delete this trip? Entries will be unlinked, not deleted.')) return;
-		await db.entries.where('tripId').equals(id).modify({ tripId: null });
-		await db.trips.delete(id);
+		const now = new Date().toISOString();
+		// Unlink entries
+		await db.entries.where('tripId').equals(id).modify({ tripId: null, dirty: true, updatedAt: now });
+		// Soft delete trip
+		await db.trips.update(id, { deletedAt: now, updatedAt: now, dirty: true });
+		await syncStore.refreshPendingCount();
+		sync();
 	}
 </script>
 

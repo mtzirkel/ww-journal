@@ -1,5 +1,35 @@
 <script lang="ts">
+	import { sync, syncStore } from '$lib/sync.svelte.js';
+	import { onMount } from 'svelte';
+
 	let { data } = $props();
+	let persistGranted = $state<boolean | null>(null);
+
+	onMount(async () => {
+		await syncStore.refreshPendingCount();
+		if (navigator.storage?.persisted) {
+			persistGranted = await navigator.storage.persisted();
+		}
+	});
+
+	async function requestPersist() {
+		if (navigator.storage?.persist) {
+			persistGranted = await navigator.storage.persist();
+		}
+	}
+
+	function relativeTime(iso: string | null): string {
+		if (!iso) return 'never';
+		const ms = Date.now() - new Date(iso).getTime();
+		const sec = Math.floor(ms / 1000);
+		if (sec < 60) return `${sec}s ago`;
+		const min = Math.floor(sec / 60);
+		if (min < 60) return `${min}m ago`;
+		const hr = Math.floor(min / 60);
+		if (hr < 24) return `${hr}h ago`;
+		const days = Math.floor(hr / 24);
+		return `${days}d ago`;
+	}
 </script>
 
 <h1 class="text-3xl font-bold mb-6">Settings</h1>
@@ -10,6 +40,65 @@
 		{#if data.user}
 			<p>Signed in as <strong>{data.user.username}</strong></p>
 		{/if}
+	</div>
+</div>
+
+<div class="card bg-base-100 shadow mb-4">
+	<div class="card-body">
+		<h2 class="card-title">Sync</h2>
+		<div class="space-y-2 text-sm">
+			<div class="flex justify-between">
+				<span class="text-base-content/60">Status</span>
+				<span class="font-medium">
+					{#if syncStore.state === 'syncing'}
+						<span class="loading loading-spinner loading-xs"></span> Syncing...
+					{:else if syncStore.state === 'error'}
+						<span class="text-error">Error</span>
+					{:else if syncStore.state === 'offline'}
+						Offline
+					{:else if syncStore.pendingCount > 0}
+						{syncStore.pendingCount} unsynced
+					{:else}
+						<span class="text-success">All synced</span>
+					{/if}
+				</span>
+			</div>
+			<div class="flex justify-between">
+				<span class="text-base-content/60">Last sync</span>
+				<span>{relativeTime(syncStore.lastSyncedAt)}</span>
+			</div>
+			{#if syncStore.lastError}
+				<div class="alert alert-error text-xs mt-2">
+					<span>{syncStore.lastError}</span>
+				</div>
+			{/if}
+		</div>
+		<button class="btn btn-primary btn-sm mt-4" disabled={syncStore.state === 'syncing'} onclick={() => sync()}>
+			Sync Now
+		</button>
+	</div>
+</div>
+
+<div class="card bg-base-100 shadow mb-4">
+	<div class="card-body">
+		<h2 class="card-title">Storage</h2>
+		<p class="text-sm text-base-content/60">
+			Persistent storage prevents the browser from clearing your journal data under storage pressure.
+		</p>
+		<div class="flex justify-between items-center mt-2">
+			<span class="text-sm">
+				{#if persistGranted === true}
+					<span class="text-success">✓ Persistent storage granted</span>
+				{:else if persistGranted === false}
+					<span class="text-warning">⚠ Not granted</span>
+				{:else}
+					Checking...
+				{/if}
+			</span>
+			{#if persistGranted === false}
+				<button class="btn btn-sm btn-outline" onclick={requestPersist}>Request</button>
+			{/if}
+		</div>
 	</div>
 </div>
 

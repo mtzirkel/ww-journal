@@ -3,15 +3,18 @@
 	import { db, seedRivers, seedEntries } from '$lib/db/index.js';
 	import { fetchUsgsFlow } from '$lib/api/usgs.js';
 	import RiverAutocomplete from '$lib/components/RiverAutocomplete.svelte';
-	import type { River, JournalEntry, Trip } from '$lib/types.js';
+	import TagInput from '$lib/components/TagInput.svelte';
+	import type { River, JournalEntry, Trip, EntryTag } from '$lib/types.js';
+	import { sync, syncStore } from '$lib/sync.svelte.js';
 	import { onMount } from 'svelte';
 
 	let selectedRiver = $state<River | null>(null);
 	let date = $state(new Date().toISOString().slice(0, 10));
 	let flow = $state<number | null>(null);
 	let description = $state('');
-	let tripId = $state<number | null>(null);
+	let tripId = $state<string | null>(null);
 	let trips = $state<Trip[]>([]);
+	let tags = $state<EntryTag[]>([]);
 	let fetchingFlow = $state(false);
 	let saving = $state(false);
 
@@ -42,18 +45,23 @@
 
 		const now = new Date().toISOString();
 		const entry: JournalEntry = {
+			id: crypto.randomUUID(),
 			date,
 			riverId: selectedRiver.id,
 			flow: flow ?? 0,
 			description,
 			tripId,
+			tags,
 			createdAt: now,
 			updatedAt: now,
-			syncStatus: 'local'
+			deletedAt: null,
+			dirty: true
 		};
 
 		await db.entries.add(entry);
 		saving = false;
+		await syncStore.refreshPendingCount();
+		sync(); // fire and forget — UI navigates immediately
 		goto('/entries');
 	}
 
@@ -137,7 +145,7 @@
 		</div>
 
 		{#if trips.length > 0}
-			<div class="form-control mb-6">
+			<div class="form-control mb-4">
 				<label class="label" for="trip">
 					<span class="label-text">Trip (optional)</span>
 				</label>
@@ -149,6 +157,10 @@
 				</select>
 			</div>
 		{/if}
+
+		<div class="mb-6">
+			<TagInput bind:value={tags} />
+		</div>
 
 		<button
 			class="btn btn-primary w-full"

@@ -100,75 +100,83 @@ describe('River type', () => {
 // ---------------------------------------------------------------------------
 
 describe('JournalEntry type', () => {
-	it('can be constructed with all fields including optional id', () => {
-		// Requirement: JournalEntry with id (existing record) must be valid
+	it('can be constructed with all required fields', () => {
+		// Requirement: JournalEntry uses UUID strings as IDs for sync safety
 		const entry: JournalEntry = {
-			id: 1,
+			id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
 			date: '2024-06-01',
 			riverId: 42,
 			flow: 450,
 			description: 'Great run, medium water',
 			tripId: null,
+			tags: [],
 			createdAt: '2024-06-01T18:00:00Z',
 			updatedAt: '2024-06-01T18:00:00Z',
-			syncStatus: 'local'
+			deletedAt: null,
+			dirty: true
 		};
 
-		expect(entry.id).toBe(1);
+		expect(typeof entry.id).toBe('string');
 		expect(entry.riverId).toBe(42);
 		expect(entry.flow).toBe(450);
+		expect(entry.dirty).toBe(true);
 	});
 
-	it('can be constructed without id (new, unsaved entry)', () => {
-		// Requirement: new entries before Dexie assigns an auto-increment id
-		// must be valid — id is optional
+	it('soft delete uses deletedAt timestamp, not record removal', () => {
+		// Requirement: sync needs to propagate deletions across devices, so we
+		// keep the record with a deletedAt timestamp instead of physically deleting
 		const entry: JournalEntry = {
+			id: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
 			date: '2024-06-15',
 			riverId: 7,
 			flow: 820,
 			description: 'High water flush',
 			tripId: null,
+			tags: [],
 			createdAt: '2024-06-15T14:00:00Z',
-			updatedAt: '2024-06-15T14:00:00Z',
-			syncStatus: 'pending'
+			updatedAt: '2024-06-15T20:00:00Z',
+			deletedAt: '2024-06-15T20:00:00Z',
+			dirty: true
 		};
 
-		expect(entry.id).toBeUndefined();
-		expect(entry.date).toBe('2024-06-15');
+		expect(entry.deletedAt).toBeTruthy();
+		expect(entry.deletedAt).toBe(entry.updatedAt);
 	});
 
-	it('syncStatus accepts all three valid states', () => {
-		// Requirement: the PWA offline sync system uses these three states to track
-		// what needs to be synced to the server when connectivity is restored
-		const statuses: JournalEntry['syncStatus'][] = ['local', 'synced', 'pending'];
-
-		for (const status of statuses) {
-			const entry: JournalEntry = {
-				date: '2024-01-01',
-				riverId: 1,
-				flow: 100,
-				description: '',
-				tripId: null,
-				createdAt: '',
-				updatedAt: '',
-				syncStatus: status
-			};
-			expect(entry.syncStatus).toBe(status);
-		}
+	it('dirty flag tracks unsynced state', () => {
+		// Requirement: clean records (already synced) have dirty=false,
+		// modified records have dirty=true and get pushed on next sync
+		const synced: JournalEntry = {
+			id: 'c3d4e5f6-a7b8-9012-cdef-123456789012',
+			date: '2024-01-01',
+			riverId: 1,
+			flow: 100,
+			description: '',
+			tripId: null,
+			tags: [],
+			createdAt: '2024-01-01T00:00:00Z',
+			updatedAt: '2024-01-01T00:00:00Z',
+			deletedAt: null,
+			dirty: false
+		};
+		expect(synced.dirty).toBe(false);
 	});
 
 	it('date is stored as a string (ISO date), not a Date object', () => {
 		// Requirement: Dexie/IndexedDB date indexing works best with ISO strings;
 		// storing as Date objects creates serialization issues
 		const entry: JournalEntry = {
+			id: 'd4e5f6a7-b8c9-0123-def0-234567890123',
 			date: '2024-06-01',
 			riverId: 1,
 			flow: 500,
 			description: 'test',
 			tripId: null,
+			tags: [],
 			createdAt: '2024-06-01T00:00:00Z',
 			updatedAt: '2024-06-01T00:00:00Z',
-			syncStatus: 'local'
+			deletedAt: null,
+			dirty: true
 		};
 
 		expect(typeof entry.date).toBe('string');
