@@ -81,9 +81,10 @@
 
 <div class="card bg-base-100 shadow mb-4">
 	<div class="card-body">
-		<h2 class="card-title">Storage</h2>
+		<h2 class="card-title">Local Storage</h2>
 		<p class="text-sm text-base-content/60">
-			Persistent storage prevents the browser from clearing your journal data under storage pressure.
+			Your journal data is stored locally on this device and synced to the server. Persistent storage prevents your browser from evicting the local copy under storage pressure.
+			This matters most on <strong>mobile browsers</strong> (especially iOS Safari) which can aggressively clear site data. Desktop browsers rarely evict data.
 		</p>
 		<div class="flex justify-between items-center mt-2">
 			<span class="text-sm">
