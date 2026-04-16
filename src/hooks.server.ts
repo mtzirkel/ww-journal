@@ -35,5 +35,5 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Not authenticated — redirect to auth service login
 	const authUrl = env.AUTH_URL || 'http://localhost:5173';
 	const returnUrl = event.url.href;
-	redirect(302, `${authUrl}/login?return=${encodeURIComponent(returnUrl)}`);
+	redirect(302, `${authUrl}/login?return_to=${encodeURIComponent(returnUrl)}`);
 };

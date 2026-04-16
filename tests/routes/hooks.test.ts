@@ -144,7 +144,7 @@ describe('auth hook — unauthenticated requests', () => {
 			?? (thrown as Response).headers?.get('location')
 			?? '';
 		expect(location).toContain('localhost:5173/login');
-		expect(location).toContain('return=');
+		expect(location).toContain('return_to=');
 	});
 
 	it('redirects to auth service when the cookie token is invalid', async () => {
