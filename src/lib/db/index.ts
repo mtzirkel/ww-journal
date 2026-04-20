@@ -186,6 +186,10 @@ export async function seedRivers() {
 }
 
 export async function seedEntries() {
+	// Don't seed if we've ever synced — server is the source of truth
+	const synced = await db.syncSettings.get('lastSyncedAt');
+	if (synced) return;
+
 	const count = await db.entries.count();
 	if (count > 0) return;
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { db, seedRivers, seedEntries } from '$lib/db/index.js';
+	import { db, seedRivers } from '$lib/db/index.js';
 	import type { River } from '$lib/types.js';
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
@@ -9,7 +9,8 @@
 
 	onMount(async () => {
 		await seedRivers();
-		await seedEntries();
+		// Note: intentionally NOT calling seedEntries() here — we only want
+		// real logged entries on the map, not historical seed data.
 
 		// Get river IDs from entries
 		const entries = await db.entries.toArray();
