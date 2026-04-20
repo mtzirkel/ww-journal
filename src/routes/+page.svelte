@@ -118,8 +118,25 @@
 
 	// Chart calculations
 	let chartSorted = $derived([...selectedGroupEntries].sort((a, b) => a.date.localeCompare(b.date)));
-	let chartMinFlow = $derived(chartSorted.length > 0 ? Math.min(...chartSorted.map(e => e.flow)) : 0);
-	let chartMaxFlow = $derived(chartSorted.length > 0 ? Math.max(...chartSorted.map(e => e.flow)) : 1);
+
+	// Fixed Y-axis: nice round ticks that stay stable regardless of data
+	function niceScale(min: number, max: number, ticks = 4): number[] {
+		if (min === max) { min = 0; max = max || 1; }
+		const range = max - min;
+		const step = Math.pow(10, Math.floor(Math.log10(range / ticks)));
+		const niceStep = [1, 2, 5, 10].map(f => f * step).find(s => range / s <= ticks + 1) ?? step;
+		const niceMin = Math.floor(min / niceStep) * niceStep;
+		const niceMax = Math.ceil(max / niceStep) * niceStep;
+		const result = [];
+		for (let v = niceMin; v <= niceMax + niceStep * 0.01; v += niceStep) result.push(Math.round(v));
+		return result;
+	}
+
+	let chartRawMin = $derived(chartSorted.length > 0 ? Math.min(...chartSorted.map(e => e.flow)) : 0);
+	let chartRawMax = $derived(chartSorted.length > 0 ? Math.max(...chartSorted.map(e => e.flow)) : 1000);
+	let chartTicks = $derived(niceScale(chartRawMin, chartRawMax));
+	let chartMinFlow = $derived(chartTicks[0]);
+	let chartMaxFlow = $derived(chartTicks[chartTicks.length - 1]);
 	let chartFlowRange = $derived(chartMaxFlow - chartMinFlow || 1);
 
 	const CHART_W = 600, CHART_H = 220, PAD_L = 60, PAD_R = 20, PAD_T = 20, PAD_B = 40;
@@ -282,40 +299,44 @@
 					<div class="mt-4 overflow-x-auto">
 						<svg viewBox="0 0 {CHART_W} {CHART_H}" class="w-full max-w-[600px]">
 							<!-- Y axis -->
-							{#each [chartMinFlow, chartMinFlow + chartFlowRange / 2, chartMaxFlow] as tick}
-								<text x={PAD_L - 8} y={chartY(tick)}
-									text-anchor="end" dominant-baseline="middle" class="fill-base-content/40 text-[10px]"
-								>{Math.round(tick)}</text>
-								<line x1={PAD_L} x2={PAD_L + PLOT_W}
-									y1={chartY(tick)} y2={chartY(tick)}
-									class="stroke-base-content/10" stroke-dasharray="4 4" />
-							{/each}
+								{#each chartTicks as tick}
+									<text x={PAD_L - 8} y={chartY(tick)}
+										text-anchor="end" dominant-baseline="middle" class="fill-base-content/40 text-[10px]"
+									>{tick >= 1000 ? (tick/1000).toFixed(1) + 'k' : tick}</text>
+									<line x1={PAD_L} x2={PAD_L + PLOT_W}
+										y1={chartY(tick)} y2={chartY(tick)}
+										class="stroke-base-content/10" stroke-dasharray="4 4" />
+								{/each}
 							<text x={PAD_L - 8} y={PAD_T - 8} text-anchor="end" class="fill-base-content/40 text-[9px]">CFS</text>
 
-							<!-- Data points by section -->
-							{#each chartSorted as entry, i}
-								<!-- Hit target -->
-								<circle cx={chartX(i)} cy={chartY(entry.flow)} r="14"
-									fill="transparent" class="cursor-pointer"
-									onclick={() => selectedEntryId = selectedEntryId === entry.id ? null : entry.id}
-								/>
-								<!-- Visible dot -->
-								<circle cx={chartX(i)} cy={chartY(entry.flow)}
-									r={selectedEntryId === entry.id ? 8 : 6}
-									fill={selectedEntryId === entry.id ? '#f59e0b' : (selectedGroup?.sections.find(s => s.riverId === entry.riverId)?.color ?? 'var(--color-river)')}
-									stroke={selectedEntryId === entry.id ? '#d97706' : 'white'}
-									stroke-width="1.5"
-									class="cursor-pointer"
-									onclick={() => selectedEntryId = selectedEntryId === entry.id ? null : entry.id}
-								/>
-								<text x={chartX(i)} y={CHART_H - 8} text-anchor="middle"
-									class="fill-base-content/50 text-[8px]"
-									transform="rotate(-35 {chartX(i)} {CHART_H - 8})"
-								>{new Date(entry.date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</text>
-								<text x={chartX(i)} y={chartY(entry.flow) - 10} text-anchor="middle"
-									class="fill-base-content/70 text-[10px] font-bold"
-								>{Math.round(entry.flow)}</text>
-							{/each}
+								<!-- Data points by section -->
+								{#each chartSorted as entry, i}
+									<!-- Hit target -->
+									<circle cx={chartX(i)} cy={chartY(entry.flow)} r="14"
+										fill="transparent" class="cursor-pointer"
+										onclick={() => selectedEntryId = selectedEntryId === entry.id ? null : entry.id}
+									/>
+									<!-- Visible dot -->
+									<circle cx={chartX(i)} cy={chartY(entry.flow)}
+										r={selectedEntryId === entry.id ? 8 : 6}
+										fill={selectedEntryId === entry.id ? '#f59e0b' : (selectedGroup?.sections.find(s => s.riverId === entry.riverId)?.color ?? 'var(--color-river)')}
+										stroke={selectedEntryId === entry.id ? '#d97706' : 'white'}
+										stroke-width="1.5"
+										class="cursor-pointer"
+										onclick={() => selectedEntryId = selectedEntryId === entry.id ? null : entry.id}
+									/>
+									<!-- Date label — only show if this date hasn't appeared yet -->
+									{#if i === 0 || chartSorted[i - 1].date !== entry.date}
+									<text x={chartX(i)} y={CHART_H - 8} text-anchor="middle"
+										class="fill-base-content/50 text-[8px]"
+										transform="rotate(-35 {chartX(i)} {CHART_H - 8})"
+									>{new Date(entry.date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</text>
+									{/if}
+									<!-- Flow label above dot -->
+									<text x={chartX(i)} y={chartY(entry.flow) - 10} text-anchor="middle"
+										class="fill-base-content/70 text-[10px] font-bold"
+									>{Math.round(entry.flow)}</text>
+								{/each}
 						</svg>
 					</div>
 
