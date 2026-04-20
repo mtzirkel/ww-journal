@@ -3,6 +3,7 @@
 	import { db, seedRivers } from '$lib/db/index.js';
 	import type { River, JournalEntry, Trip } from '$lib/types.js';
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 
 	let entries = $state<(JournalEntry & { river?: River; trip?: Trip })[]>([]);
 	let rivers = $state<Map<number, River>>(new Map());
@@ -11,6 +12,9 @@
 	let loaded = $state(false);
 
 	onMount(() => {
+		// Read ?river= param from URL
+		const riverParam = page.url.searchParams.get('river');
+		if (riverParam) filterRiverId = parseInt(riverParam);
 		let subscription: { unsubscribe: () => void } | undefined;
 
 		(async () => {

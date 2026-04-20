@@ -65,6 +65,7 @@
 				${river.section ? `<br><em>${river.section}</em>` : ''}
 				<br>${river.state}${river.classRating ? ` · Class ${river.classRating}` : ''}
 				<br>${entryCount} day${entryCount !== 1 ? 's' : ''}
+				<br><a href="/entries?river=${river.id}" style="color:#238c91;font-weight:600;text-decoration:underline;">View entries →</a>
 			`);
 		}
 
