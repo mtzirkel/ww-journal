@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Deploy ww-journal to badger (100.74.239.24)
+# Usage: ./bin/deploy
+# Runs pre-commit hooks locally before pushing, then SSHes to server to pull, build, and restart.
+
+set -e
+
+REMOTE_HOST="100.74.239.24"
+REMOTE_DIR="/srv/ww-journal"
+
+echo "==> Running checks locally..."
+npm run check && npm test
+
+echo "==> Pushing to GitHub..."
+git push origin master
+
+echo "==> Deploying to badger..."
+ssh "$REMOTE_HOST" "
+  set -e
+  cd $REMOTE_DIR
+  echo '--- Pulling latest...'
+  git pull
+  echo '--- Installing deps (no scripts to skip husky)...'
+  npm install --ignore-scripts
+  echo '--- Building...'
+  npm run build
+  echo '--- Restarting service...'
+  sudo systemctl restart ww-journal
+  sleep 2
+  sudo systemctl status ww-journal --no-pager | tail -6
+"
+
+echo ""
+echo "✓ Deployed. Check https://ww-journal.noegosunderwater.com"
