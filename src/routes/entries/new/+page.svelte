@@ -39,30 +39,39 @@
 		}
 	});
 
+	let saveError = $state<string | null>(null);
+
 	async function save() {
 		if (!selectedRiver || !date) return;
 		saving = true;
+		saveError = null;
 
-		const now = new Date().toISOString();
-		const entry: JournalEntry = {
-			id: crypto.randomUUID(),
-			date,
-			riverId: selectedRiver.id,
-			flow: flow ?? 0,
-			description,
-			tripId,
-			tags,
-			createdAt: now,
-			updatedAt: now,
-			deletedAt: null,
-			dirty: true
-		};
+		try {
+			const now = new Date().toISOString();
+			const entry: JournalEntry = {
+				id: crypto.randomUUID(),
+				date,
+				riverId: selectedRiver.id,
+				flow: flow ?? 0,
+				description,
+				tripId,
+				tags,
+				createdAt: now,
+				updatedAt: now,
+				deletedAt: null,
+				dirty: true
+			};
 
-		await db.entries.add(entry);
-		saving = false;
-		await syncStore.refreshPendingCount();
-		sync(); // fire and forget — UI navigates immediately
-		goto('/entries');
+			await db.entries.put(entry);
+			await syncStore.refreshPendingCount();
+			sync(); // fire and forget — UI navigates immediately
+			goto('/entries');
+		} catch (err) {
+			console.error('[save] failed:', err);
+			saveError = err instanceof Error ? err.message : String(err);
+		} finally {
+			saving = false;
+		}
 	}
 
 	let canFetchFlow = $derived(
@@ -161,6 +170,12 @@
 		<div class="mb-6">
 			<TagInput bind:value={tags} />
 		</div>
+
+		{#if saveError}
+			<div class="alert alert-error mb-4">
+				<span>Save failed: {saveError}</span>
+			</div>
+		{/if}
 
 		<button
 			class="btn btn-primary w-full"
