@@ -85,7 +85,7 @@
 		class="input input-bordered w-full"
 		placeholder="Search rivers..."
 		bind:value={query}
-		oninput={() => { open = true; selectedIndex = -1; search(query); }}
+		oninput={() => { open = true; selectedIndex = -1; value = null; search(query); }}
 		onfocus={() => { if (query.length >= 2) { open = true; search(query); } }}
 		onblur={() => setTimeout(() => { open = false; }, 200)}
 		onkeydown={handleKeydown}
