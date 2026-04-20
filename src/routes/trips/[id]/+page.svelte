@@ -27,7 +27,7 @@
 			trip = await db.trips.get(tripId) ?? null;
 
 			const observable = liveQuery(async () => {
-				const all = await db.entries.where('tripId').equals(tripId).sortBy('date');
+				const all = await db.entries.where('tripId').equals(tripId).sortBy('datetime');
 				return all.filter((e) => !e.deletedAt);
 			});
 
@@ -37,7 +37,7 @@
 
 				// Auto-compute trip dates from entries
 				if (trip && value.length > 0) {
-					const dates = value.map(e => e.date).sort();
+					const dates = value.map(e => e.datetime).sort();
 					const startDate = dates[0];
 					const endDate = dates[dates.length - 1];
 					if (trip.startDate !== startDate || trip.endDate !== endDate) {
@@ -92,7 +92,7 @@
 	let uniqueRivers = $derived(new Set(entries.map(e => e.riverId)).size);
 	let dateRange = $derived(() => {
 		if (entries.length === 0) return '';
-		const dates = entries.map(e => e.date).sort();
+		const dates = entries.map(e => e.datetime).sort();
 		const start = new Date(dates[0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 		const end = new Date(dates[dates.length - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 		return dates.length === 1 ? start : `${start} — ${end}`;
@@ -174,7 +174,7 @@
 								{/if}
 							</a>
 							<div class="text-right shrink-0 ml-4">
-								<div class="text-sm text-base-content/50">{new Date(entry.date).toLocaleDateString()}</div>
+								<div class="text-sm text-base-content/50">{new Date(entry.datetime).toLocaleDateString()}</div>
 								<div class="font-mono text-sm">{entry.flow} cfs</div>
 								<button class="btn btn-ghost btn-xs mt-1 text-error" onclick={() => entry.id && removeEntry(entry.id)}>
 									Remove

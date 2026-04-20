@@ -23,7 +23,7 @@
 			trips = new Map(allTrips.map((t) => [t.id, t]));
 
 			const observable = liveQuery(async () => {
-				const all = await db.entries.orderBy('date').reverse().toArray();
+				const all = await db.entries.orderBy('datetime').reverse().toArray();
 				return all
 					.filter((e) => !e.deletedAt)
 					.map((e) => ({ ...e, river: rivers.get(e.riverId), trip: e.tripId ? trips.get(e.tripId) : undefined }));
@@ -111,12 +111,12 @@
 								<p class="text-sm text-base-content/60 mt-1 line-clamp-1">{entry.description}</p>
 							{/if}
 						</div>
-						<div class="text-right text-sm shrink-0 ml-4">
-							<div class="text-base-content/50">{new Date(entry.date).toLocaleDateString()}</div>
-							{#if entry.flow}
-								<div class="font-mono">{entry.flow} cfs</div>
-							{/if}
-						</div>
+			<div class="text-right text-sm shrink-0 ml-4">
+					<div class="text-base-content/50">{new Date(entry.datetime).toLocaleDateString()}</div>
+					{#if entry.flow}
+						<div class="font-mono">{entry.flow} cfs</div>
+					{/if}
+				</div>
 					</div>
 				</div>
 			</a>

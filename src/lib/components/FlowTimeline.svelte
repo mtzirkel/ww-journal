@@ -17,8 +17,8 @@
 	let fetchingCurrent = $state(false);
 	let selectedEntry = $state<JournalEntry | null>(null);
 
-	// Sort entries by date
-	let sorted = $derived([...entries].sort((a, b) => a.date.localeCompare(b.date)));
+	// Sort entries by datetime
+	let sorted = $derived([...entries].sort((a, b) => a.datetime.localeCompare(b.datetime)));
 
 	let highestFlow = $derived(Math.max(...sorted.map((e) => e.flow)));
 	let lowestFlow = $derived(Math.min(...sorted.map((e) => e.flow)));
@@ -168,7 +168,7 @@
 						text-anchor="middle"
 						class="fill-base-content/50 text-[9px]"
 						transform="rotate(-30 {xPos(i)} {chartH - 8})"
-					>{new Date(entry.date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</text>
+					>{new Date(entry.datetime).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</text>
 					<!-- Flow label on point -->
 					<text
 						x={xPos(i)}
@@ -204,8 +204,8 @@
 			<div class="bg-base-200 rounded-lg p-4 mt-4">
 				<div class="flex justify-between items-start">
 					<div>
-						<p class="font-bold">
-							{new Date(selectedEntry.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+					<p class="font-bold">
+						{new Date(selectedEntry.datetime).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 						</p>
 						<p class="font-mono text-sm mt-1">{Math.round(selectedEntry.flow)} CFS</p>
 					</div>

@@ -104,7 +104,7 @@ describe('JournalEntry type', () => {
 		// Requirement: JournalEntry uses UUID strings as IDs for sync safety
 		const entry: JournalEntry = {
 			id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-			date: '2024-06-01',
+			datetime: '2024-06-01T12:00:00.000Z',
 			riverId: 42,
 			flow: 450,
 			description: 'Great run, medium water',
@@ -127,7 +127,7 @@ describe('JournalEntry type', () => {
 		// keep the record with a deletedAt timestamp instead of physically deleting
 		const entry: JournalEntry = {
 			id: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
-			date: '2024-06-15',
+			datetime: '2024-06-15T12:00:00.000Z',
 			riverId: 7,
 			flow: 820,
 			description: 'High water flush',
@@ -148,7 +148,7 @@ describe('JournalEntry type', () => {
 		// modified records have dirty=true and get pushed on next sync
 		const synced: JournalEntry = {
 			id: 'c3d4e5f6-a7b8-9012-cdef-123456789012',
-			date: '2024-01-01',
+			datetime: '2024-01-01T12:00:00.000Z',
 			riverId: 1,
 			flow: 100,
 			description: '',
@@ -167,7 +167,7 @@ describe('JournalEntry type', () => {
 		// storing as Date objects creates serialization issues
 		const entry: JournalEntry = {
 			id: 'd4e5f6a7-b8c9-0123-def0-234567890123',
-			date: '2024-06-01',
+			datetime: '2024-06-01T12:00:00.000Z',
 			riverId: 1,
 			flow: 500,
 			description: 'test',
@@ -179,7 +179,7 @@ describe('JournalEntry type', () => {
 			dirty: true
 		};
 
-		expect(typeof entry.date).toBe('string');
+		expect(typeof entry.datetime).toBe('string');
 		expect(typeof entry.createdAt).toBe('string');
 	});
 });

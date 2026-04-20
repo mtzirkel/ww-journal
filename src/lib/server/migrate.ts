@@ -72,6 +72,15 @@ export async function migrate() {
 	await sql`CREATE INDEX IF NOT EXISTS entries_user_date ON entries(user_id, date DESC)`;
 	await sql`CREATE INDEX IF NOT EXISTS entries_user_trip ON entries(user_id, trip_id)`;
 
+	// Add datetime column if it doesn't exist (migration for existing installs)
+	await sql`
+		ALTER TABLE entries ADD COLUMN IF NOT EXISTS datetime TIMESTAMPTZ
+	`;
+	// Backfill: set datetime from date at noon UTC for rows that have none
+	await sql`
+		UPDATE entries SET datetime = (date::text || 'T12:00:00.000Z')::timestamptz WHERE datetime IS NULL
+	`;
+
 	// Tag categories — per user.
 	await sql`
 		CREATE TABLE IF NOT EXISTS tag_categories (

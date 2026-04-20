@@ -27,6 +27,7 @@ export interface SyncEntry {
 	riverId: number;
 	tripId: string | null;
 	date: string;
+	datetime: string;
 	flow: number;
 	description: string;
 	tags: Array<{ category: string; value: string }>;
@@ -152,12 +153,12 @@ export async function pushChanges(userId: string, payload: SyncPayload): Promise
 
 	if (payload.entries) {
 		for (const e of payload.entries) {
-			await sql`
+		await sql`
 				INSERT INTO entries (
-					id, user_id, river_id, trip_id, date, flow, description, tags,
+					id, user_id, river_id, trip_id, date, datetime, flow, description, tags,
 					created_at, updated_at, deleted_at
 				) VALUES (
-					${e.id}, ${userId}, ${e.riverId}, ${e.tripId}, ${e.date}, ${e.flow},
+					${e.id}, ${userId}, ${e.riverId}, ${e.tripId}, ${e.date}, ${new Date(e.datetime)}, ${e.flow},
 					${e.description}, ${sql.json(e.tags)},
 					${new Date(e.createdAt)}, ${new Date(e.updatedAt)},
 					${e.deletedAt ? new Date(e.deletedAt) : null}
@@ -166,6 +167,7 @@ export async function pushChanges(userId: string, payload: SyncPayload): Promise
 					river_id = EXCLUDED.river_id,
 					trip_id = EXCLUDED.trip_id,
 					date = EXCLUDED.date,
+					datetime = EXCLUDED.datetime,
 					flow = EXCLUDED.flow,
 					description = EXCLUDED.description,
 					tags = EXCLUDED.tags,
@@ -273,11 +275,13 @@ function rowToRiver(r: any): SyncRiver {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function rowToEntry(r: any): SyncEntry {
+	const dateStr = typeof r.date === 'string' ? r.date : r.date.toISOString().slice(0, 10);
 	return {
 		id: r.id,
 		riverId: r.river_id,
 		tripId: r.trip_id,
-		date: typeof r.date === 'string' ? r.date : r.date.toISOString().slice(0, 10),
+		date: dateStr,
+		datetime: r.datetime ? (r.datetime instanceof Date ? r.datetime.toISOString() : r.datetime) : dateStr + 'T12:00:00.000Z',
 		flow: Number(r.flow),
 		description: r.description,
 		tags: r.tags ?? [],

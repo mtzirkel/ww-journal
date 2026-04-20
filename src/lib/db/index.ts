@@ -107,6 +107,37 @@ db.version(4).stores({
 	});
 });
 
+// v6: rename date → datetime (ISO timestamp), default noon UTC.
+// Also clears dirty=false entries and resets lastSyncedAt so the phone
+// pulls a fresh canonical copy from the server instead of keeping stale seeds/dupes.
+db.version(6).stores({
+	rivers: 'id, riverName, state, externalGaugeId, [riverName+state], updatedAt, dirty',
+	entries: 'id, datetime, riverId, tripId, updatedAt, dirty, deletedAt',
+	trips: 'id, name, startDate, updatedAt, dirty, deletedAt',
+	tagCategories: 'id, name, updatedAt, dirty, deletedAt',
+	syncSettings: 'key'
+}).upgrade(async tx => {
+	// Convert existing entries: date (YYYY-MM-DD) → datetime (ISO timestamp at noon UTC)
+	await tx.table('entries').toCollection().modify((entry: Record<string, unknown>) => {
+		if (!entry.datetime && entry.date) {
+			entry.datetime = (entry.date as string) + 'T12:00:00.000Z';
+		}
+		delete entry.date;
+	});
+
+	// Nuke entries that are already clean (seeds + synced records) so the phone
+	// pulls a fresh copy from server rather than keeping stale dupes.
+	const dirtyIds = await tx.table('entries')
+		.filter((e: { dirty: boolean }) => e.dirty === true)
+		.primaryKeys();
+	const allIds = await tx.table('entries').toCollection().primaryKeys();
+	const toDelete = (allIds as string[]).filter((id: string) => !(dirtyIds as string[]).includes(id));
+	await tx.table('entries').bulkDelete(toDelete);
+
+	// Reset lastSyncedAt so next sync is a full pull (gets canonical entries from server)
+	await tx.table('syncSettings').delete('lastSyncedAt');
+});
+
 // v5: mark all existing entries as not-dirty so seed data doesn't get pushed to server
 db.version(5).stores({
 	rivers: 'id, riverName, state, externalGaugeId, [riverName+state], updatedAt, dirty',
@@ -164,7 +195,7 @@ export async function seedEntries() {
 	const now = new Date().toISOString();
 	const entries: JournalEntry[] = rawEntries.map((e: { id: number; date: string; riverId: number; flow: number; description: string }) => ({
 		id: crypto.randomUUID(),
-		date: e.date,
+		datetime: e.date + 'T12:00:00.000Z',
 		riverId: e.riverId,
 		flow: e.flow,
 		description: e.description,

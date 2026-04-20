@@ -14,7 +14,7 @@
 
 	// Edit state
 	let editRiver = $state<River | null>(null);
-	let editDate = $state('');
+	let editDatetime = $state('');
 	let editFlow = $state<number | null>(null);
 	let editDescription = $state('');
 	let fetchingFlow = $state(false);
@@ -32,7 +32,7 @@
 	function startEdit() {
 		if (!entry) return;
 		editRiver = river;
-		editDate = entry.date;
+		editDatetime = new Date(entry.datetime).toISOString().slice(0, 16);
 		editFlow = entry.flow;
 		editDescription = entry.description;
 		editing = true;
@@ -43,7 +43,7 @@
 		saving = true;
 		await db.entries.update(entry.id, {
 			riverId: editRiver.id,
-			date: editDate,
+			datetime: new Date(editDatetime).toISOString(),
 			flow: editFlow ?? 0,
 			description: editDescription,
 			updatedAt: new Date().toISOString(),
@@ -71,9 +71,9 @@
 	}
 
 	async function fetchFlow() {
-		if (!editRiver?.externalGaugeId || !editDate || editRiver.externalGaugeSource !== 'usgs') return;
+		if (!editRiver?.externalGaugeId || !editDatetime || editRiver.externalGaugeSource !== 'usgs') return;
 		fetchingFlow = true;
-		const result = await fetchUsgsFlow(editRiver.externalGaugeId, editDate);
+		const result = await fetchUsgsFlow(editRiver.externalGaugeId, editDatetime.slice(0, 10));
 		if (result !== null) editFlow = Math.round(result);
 		fetchingFlow = false;
 	}
@@ -98,8 +98,8 @@
 
 			<div class="grid grid-cols-2 gap-4 mb-4">
 				<div class="form-control">
-					<label class="label" for="edit-date"><span class="label-text">Date</span></label>
-					<input type="date" id="edit-date" class="input input-bordered" bind:value={editDate} />
+					<label class="label" for="edit-datetime"><span class="label-text">Date & Time</span></label>
+					<input type="datetime-local" id="edit-datetime" class="input input-bordered" bind:value={editDatetime} />
 				</div>
 				<div class="form-control">
 					<label class="label" for="edit-flow"><span class="label-text">Flow (CFS)</span></label>
@@ -145,7 +145,7 @@
 			<div class="grid grid-cols-2 gap-4 mt-4">
 				<div>
 					<p class="text-sm text-base-content/50">Date</p>
-					<p class="font-medium">{new Date(entry.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+					<p class="font-medium">{new Date(entry.datetime).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
 				</div>
 				<div>
 					<p class="text-sm text-base-content/50">Flow</p>

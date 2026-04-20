@@ -9,7 +9,13 @@
 	import { onMount } from 'svelte';
 
 	let selectedRiver = $state<River | null>(null);
-	let date = $state(new Date().toISOString().slice(0, 10));
+	let datetime = $state(new Date().toISOString().slice(0, 16)); // datetime-local: "YYYY-MM-DDTHH:MM"
+	// Default to noon so same-day laps are distinct even if time isn't changed
+	$effect.pre(() => {
+		if (datetime.endsWith('T00:00')) {
+			datetime = datetime.slice(0, 10) + 'T12:00';
+		}
+	});
 	let flow = $state<number | null>(null);
 	let description = $state('');
 	let tripId = $state<string | null>(null);
@@ -25,16 +31,17 @@
 	});
 
 	async function fetchFlow() {
-		if (!selectedRiver?.externalGaugeId || !date || selectedRiver.externalGaugeSource !== 'usgs') return;
+		if (!selectedRiver?.externalGaugeId || !datetime || selectedRiver.externalGaugeSource !== 'usgs') return;
 		fetchingFlow = true;
-		const result = await fetchUsgsFlow(selectedRiver.externalGaugeId, date);
+		const dateOnly = datetime.slice(0, 10);
+		const result = await fetchUsgsFlow(selectedRiver.externalGaugeId, dateOnly);
 		if (result !== null) flow = Math.round(result);
 		fetchingFlow = false;
 	}
 
-	// Auto-fetch flow when both river and date are set
+	// Auto-fetch flow when both river and datetime are set
 	$effect(() => {
-		if (selectedRiver?.externalGaugeId && selectedRiver.externalGaugeSource === 'usgs' && date) {
+		if (selectedRiver?.externalGaugeId && selectedRiver.externalGaugeSource === 'usgs' && datetime) {
 			fetchFlow();
 		}
 	});
@@ -42,7 +49,7 @@
 	let saveError = $state<string | null>(null);
 
 	async function save() {
-		if (!selectedRiver || !date) return;
+		if (!selectedRiver || !datetime) return;
 		saving = true;
 		saveError = null;
 
@@ -50,7 +57,7 @@
 			const now = new Date().toISOString();
 			const entry: JournalEntry = {
 				id: crypto.randomUUID(),
-				date,
+				datetime: new Date(datetime).toISOString(),
 				riverId: selectedRiver.id,
 				flow: flow ?? 0,
 				description,
@@ -77,7 +84,7 @@
 	let canFetchFlow = $derived(
 		selectedRiver?.externalGaugeId &&
 		selectedRiver?.externalGaugeSource === 'usgs' &&
-		date
+		datetime
 	);
 </script>
 
@@ -103,10 +110,10 @@
 
 		<div class="grid grid-cols-2 gap-4 mb-4">
 			<div class="form-control">
-				<label class="label" for="date">
-					<span class="label-text">Date</span>
-				</label>
-				<input type="date" id="date" class="input input-bordered" bind:value={date} />
+				<label class="label" for="datetime">
+						<span class="label-text">Date & Time</span>
+					</label>
+					<input type="datetime-local" id="datetime" class="input input-bordered" bind:value={datetime} />
 			</div>
 			<div class="form-control">
 				<label class="label" for="flow">
@@ -179,7 +186,7 @@
 
 		<button
 			class="btn btn-primary w-full"
-			disabled={!selectedRiver || !date || saving}
+			disabled={!selectedRiver || !datetime || saving}
 			onclick={save}
 		>
 			{saving ? 'Saving...' : 'Save Entry'}

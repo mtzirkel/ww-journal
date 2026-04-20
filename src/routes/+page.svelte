@@ -55,8 +55,8 @@
 				const monthStr = `${yearStr}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
 				const total = entries.length;
-				const year = entries.filter((e) => e.date.startsWith(yearStr)).length;
-				const month = entries.filter((e) => e.date.startsWith(monthStr)).length;
+				const year = entries.filter((e) => e.datetime.startsWith(yearStr)).length;
+				const month = entries.filter((e) => e.datetime.startsWith(monthStr)).length;
 
 				// Group by river name, track sections
 				const byName = new Map<string, Map<number, number>>();
@@ -117,7 +117,7 @@
 	);
 
 	// Chart calculations
-	let chartSorted = $derived([...selectedGroupEntries].sort((a, b) => a.date.localeCompare(b.date)));
+	let chartSorted = $derived([...selectedGroupEntries].sort((a, b) => a.datetime.localeCompare(b.datetime)));
 
 	// Fixed Y-axis: nice round ticks that stay stable regardless of data
 	function niceScale(min: number, max: number, ticks = 4): number[] {
@@ -155,7 +155,7 @@
 	let selectedEntryRiver = $derived(selectedEntry ? allRivers.get(selectedEntry.riverId) ?? null : null);
 
 	// Year in review stats
-	let yearEntries = $derived(allEntries.filter((e) => e.date.startsWith(new Date().getFullYear().toString())));
+	let yearEntries = $derived(allEntries.filter((e) => e.datetime.startsWith(new Date().getFullYear().toString())));
 	let yearRiverCount = $derived(new Set(yearEntries.map((e) => e.riverId)).size);
 	let yearTopRiver = $derived(() => {
 		if (yearEntries.length === 0) return null;
@@ -168,7 +168,7 @@
 
 	// Month in review stats
 	let monthStr = $derived(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
-	let monthEntries = $derived(allEntries.filter((e) => e.date.startsWith(monthStr)));
+	let monthEntries = $derived(allEntries.filter((e) => e.datetime.startsWith(monthStr)));
 	let monthRiverCount = $derived(new Set(monthEntries.map((e) => e.riverId)).size);
 </script>
 
@@ -326,11 +326,11 @@
 										onclick={() => selectedEntryId = selectedEntryId === entry.id ? null : entry.id}
 									/>
 									<!-- Date label — only show if this date hasn't appeared yet -->
-									{#if i === 0 || chartSorted[i - 1].date !== entry.date}
+									{#if i === 0 || chartSorted[i - 1].datetime.slice(0,10) !== entry.datetime.slice(0,10)}
 									<text x={chartX(i)} y={CHART_H - 8} text-anchor="middle"
 										class="fill-base-content/50 text-[8px]"
 										transform="rotate(-35 {chartX(i)} {CHART_H - 8})"
-									>{new Date(entry.date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</text>
+									>{new Date(entry.datetime).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</text>
 									{/if}
 									<!-- Flow label above dot -->
 									<text x={chartX(i)} y={chartY(entry.flow) - 10} text-anchor="middle"
@@ -352,7 +352,7 @@
 										{/if}
 									</p>
 									<p class="text-sm text-base-content/50">
-										{new Date(selectedEntry.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+										{new Date(selectedEntry.datetime).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 										&middot; {Math.round(selectedEntry.flow)} CFS
 									</p>
 								</div>

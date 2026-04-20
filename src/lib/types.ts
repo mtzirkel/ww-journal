@@ -22,7 +22,7 @@ export interface River {
 
 export interface JournalEntry {
 	id: string;
-	date: string;
+	datetime: string;
 	riverId: number;
 	flow: number;
 	description: string;
