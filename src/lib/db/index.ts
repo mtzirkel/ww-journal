@@ -107,6 +107,22 @@ db.version(4).stores({
 	});
 });
 
+// v5: mark all existing entries as not-dirty so seed data doesn't get pushed to server
+db.version(5).stores({
+	rivers: 'id, riverName, state, externalGaugeId, [riverName+state], updatedAt, dirty',
+	entries: 'id, date, riverId, tripId, updatedAt, dirty, deletedAt',
+	trips: 'id, name, startDate, updatedAt, dirty, deletedAt',
+	tagCategories: 'id, name, updatedAt, dirty, deletedAt',
+	syncSettings: 'key'
+}).upgrade(async tx => {
+	// Seed entries were incorrectly marked dirty=true — fix them so they
+	// don't push as duplicates. Real user entries will have dirty=true set
+	// explicitly in save().
+	await tx.table('entries').toCollection().modify(entry => {
+		entry.dirty = false;
+	});
+});
+
 export { db };
 
 db.on('ready', () => {
@@ -157,7 +173,7 @@ export async function seedEntries() {
 		createdAt: now,
 		updatedAt: now,
 		deletedAt: null,
-		dirty: true
+		dirty: false  // seed data is historical — never push to server
 	}));
 
 	await db.entries.bulkPut(entries);
