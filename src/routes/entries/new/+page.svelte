@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { db, seedRivers, seedEntries } from '$lib/db/index.js';
+	import { db, seedRivers } from '$lib/db/index.js';
 	import { fetchUsgsFlow } from '$lib/api/usgs.js';
 	import RiverAutocomplete from '$lib/components/RiverAutocomplete.svelte';
 	import TagInput from '$lib/components/TagInput.svelte';
@@ -26,7 +26,6 @@
 
 	onMount(async () => {
 		await seedRivers();
-		await seedEntries();
 		trips = await db.trips.orderBy('name').toArray();
 	});
 

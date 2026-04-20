@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { liveQuery } from 'dexie';
-	import { db, seedRivers, seedEntries } from '$lib/db/index.js';
+	import { db, seedRivers } from '$lib/db/index.js';
 	import type { River, JournalEntry, Trip } from '$lib/types.js';
 	import { onMount } from 'svelte';
 
@@ -15,7 +15,6 @@
 
 		(async () => {
 			await seedRivers();
-			await seedEntries();
 
 			const allRivers = await db.rivers.toArray();
 			rivers = new Map(allRivers.map((r) => [r.id, r]));

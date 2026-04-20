@@ -9,9 +9,6 @@
 
 	onMount(async () => {
 		await seedRivers();
-		// Note: intentionally NOT calling seedEntries() here — we only want
-		// real logged entries on the map, not historical seed data.
-
 		// Get river IDs from entries
 		const entries = await db.entries.toArray();
 		const riverIds = [...new Set(entries.map((e) => e.riverId))];

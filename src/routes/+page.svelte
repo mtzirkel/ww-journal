@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { liveQuery } from 'dexie';
-	import { db, seedRivers, seedEntries } from '$lib/db/index.js';
+	import { db, seedRivers } from '$lib/db/index.js';
 	import type { River, JournalEntry } from '$lib/types.js';
 	import FlowTimeline from '$lib/components/FlowTimeline.svelte';
 	import { onMount } from 'svelte';
@@ -41,7 +41,6 @@
 
 		(async () => {
 			await seedRivers();
-			await seedEntries();
 
 			const rivers = new Map<number, River>(
 				(await db.rivers.toArray()).map((r) => [r.id, r])

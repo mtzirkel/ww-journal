@@ -185,36 +185,6 @@ export async function seedRivers() {
 	console.log(`Seeded ${rivers.length} rivers`);
 }
 
-export async function seedEntries() {
-	// Don't seed if we've ever synced — server is the source of truth
-	const synced = await db.syncSettings.get('lastSyncedAt');
-	if (synced) return;
-
-	const count = await db.entries.count();
-	if (count > 0) return;
-
-	const response = await fetch('/data/entries.json');
-	const rawEntries = await response.json();
-
-	const now = new Date().toISOString();
-	const entries: JournalEntry[] = rawEntries.map((e: { id: number; date: string; riverId: number; flow: number; description: string }) => ({
-		id: crypto.randomUUID(),
-		datetime: e.date + 'T12:00:00.000Z',
-		riverId: e.riverId,
-		flow: e.flow,
-		description: e.description,
-		tripId: null,
-		tags: [],
-		createdAt: now,
-		updatedAt: now,
-		deletedAt: null,
-		dirty: false  // seed data is historical — never push to server
-	}));
-
-	await db.entries.bulkPut(entries);
-	console.log(`Seeded ${entries.length} entries`);
-}
-
 export async function getLastSyncedAt(): Promise<string | null> {
 	const row = await db.syncSettings.get('lastSyncedAt');
 	return row?.value ?? null;
