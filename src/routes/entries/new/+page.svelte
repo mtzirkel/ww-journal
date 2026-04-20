@@ -55,7 +55,7 @@
 				flow: flow ?? 0,
 				description,
 				tripId,
-				tags,
+				tags: $state.snapshot(tags) as EntryTag[],
 				createdAt: now,
 				updatedAt: now,
 				deletedAt: null,
