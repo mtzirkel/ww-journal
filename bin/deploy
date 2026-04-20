@@ -18,6 +18,8 @@ echo "==> Deploying to badger..."
 ssh "$REMOTE_HOST" "
   set -e
   cd $REMOTE_DIR
+  echo '--- Fixing ownership...'
+  sudo chown -R twomed:twomed $REMOTE_DIR/.svelte-kit $REMOTE_DIR/build 2>/dev/null || true
   echo '--- Pulling latest...'
   git pull
   echo '--- Installing deps (no scripts to skip husky)...'
@@ -25,9 +27,10 @@ ssh "$REMOTE_HOST" "
   echo '--- Building...'
   npm run build
   echo '--- Restarting service...'
-  sudo systemctl restart ww-journal
+  sudo systemctl stop ww-journal
+  sudo systemctl start ww-journal
   sleep 2
-  sudo systemctl status ww-journal --no-pager | tail -6
+  sudo systemctl status ww-journal --no-pager | tail -4
 "
 
 echo ""
