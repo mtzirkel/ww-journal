@@ -82,7 +82,7 @@
 	<!-- Desktop sidebar -->
 	<aside class="hidden md:flex fixed left-0 top-0 h-full w-56 flex-col bg-base-100 shadow-lg z-40">
 		<div class="p-4 border-b border-base-300">
-			<h1 class="text-xl font-bold" style="color: var(--color-river)">WW Journal</h1>
+			<img src="/icons/icon-512.png" alt="No Egos Underwater" class="h-14 w-14 mb-1" />
 			{#if data.user}
 				<p class="text-xs text-base-content/50 mt-1">{data.user.username}</p>
 			{/if}
@@ -134,8 +134,8 @@
 	</aside>
 
 	<!-- Mobile top bar -->
-	<header class="md:hidden sticky top-0 z-40 bg-base-100 shadow-sm px-4 py-3 flex items-center justify-between">
-		<h1 class="text-lg font-bold" style="color: var(--color-river)">WW Journal</h1>
+	<header class="md:hidden sticky top-0 z-40 bg-base-100 shadow-sm px-4 py-2 flex items-center justify-between">
+		<img src="/icons/icon-512.png" alt="No Egos Underwater" class="h-9 w-9" />
 		<div class="flex items-center gap-3">
 			<button type="button" class="text-xs flex items-center gap-1" onclick={manualSync} title={syncStore.lastError ?? 'Tap to sync'}>
 				{#if syncStore.state === 'syncing'}
