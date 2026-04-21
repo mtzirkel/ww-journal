@@ -3,27 +3,22 @@
 	import { db, seedRivers } from '$lib/db/index.js';
 	import type { River, JournalEntry, Trip } from '$lib/types.js';
 	import { onMount } from 'svelte';
-	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+
+	let { data } = $props();
 
 	let entries = $state<(JournalEntry & { river?: River; trip?: Trip })[]>([]);
 	let rivers = $state<Map<number, River>>(new Map());
 	let trips = $state<Map<string, Trip>>(new Map());
-	let filterRiverId = $state<number | null>(null);
-	let filterYear = $state<string | null>(null);
-	let filterMonth = $state<string | null>(null);
-	let viewRivers = $state(false);
 	let loaded = $state(false);
 
+	// URL params come from +page.ts load — reactive on every navigation
+	let filterRiverId = $derived(data.filterRiverId);
+	let filterYear = $derived(data.filterYear);
+	let filterMonth = $derived(data.filterMonth);
+	let viewRivers = $derived(data.viewRivers);
+
 	onMount(() => {
-		// Read filter params from URL
-		const riverParam = page.url.searchParams.get('river');
-		const yearParam = page.url.searchParams.get('year');
-		const monthParam = page.url.searchParams.get('month');
-		const viewParam = page.url.searchParams.get('view');
-		if (riverParam) filterRiverId = parseInt(riverParam);
-		if (yearParam) filterYear = yearParam;
-		if (monthParam) filterMonth = monthParam;
-		if (viewParam === 'rivers') viewRivers = true;
 		let subscription: { unsubscribe: () => void } | undefined;
 
 		(async () => {
@@ -38,7 +33,11 @@
 				const all = await db.entries.orderBy('datetime').reverse().toArray();
 				return all
 					.filter((e) => !e.deletedAt)
-					.map((e) => ({ ...e, river: rivers.get(e.riverId), trip: e.tripId ? trips.get(e.tripId) : undefined }));
+					.map((e) => ({
+						...e,
+						river: rivers.get(e.riverId),
+						trip: e.tripId ? trips.get(e.tripId) : undefined
+					}));
 			});
 
 			subscription = observable.subscribe((value) => {
@@ -47,10 +46,12 @@
 			});
 		})();
 
-		return () => { subscription?.unsubscribe(); };
+		return () => {
+			subscription?.unsubscribe();
+		};
 	});
 
-	let filteredEntries = $derived(() => {
+	let filteredEntries = $derived.by(() => {
 		let result = entries;
 		if (filterRiverId) result = result.filter((e) => e.riverId === filterRiverId);
 		if (filterYear) result = result.filter((e) => e.datetime.startsWith(filterYear!));
@@ -58,18 +59,24 @@
 		return result;
 	});
 
-	let filterLabel = $derived(() => {
-		if (filterMonth) return new Date(filterMonth + '-15').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+	let filterLabel = $derived.by(() => {
+		if (filterMonth)
+			return new Date(filterMonth + '-15').toLocaleDateString('en-US', {
+				month: 'long',
+				year: 'numeric'
+			});
 		if (filterYear) return filterYear;
 		if (filterRiverId) return rivers.get(filterRiverId)?.riverName ?? 'River';
 		if (viewRivers) return 'Rivers';
 		return null;
 	});
 
-	// Rivers view: group entries by river with count
 	let riverSummary = $derived(
 		[...new Set(entries.map((e) => e.riverId))]
-			.map((id) => ({ river: rivers.get(id), count: entries.filter((e) => e.riverId === id).length }))
+			.map((id) => ({
+				river: rivers.get(id),
+				count: entries.filter((e) => e.riverId === id).length
+			}))
 			.filter((r) => r.river)
 			.sort((a, b) => b.count - a.count)
 	);
@@ -85,9 +92,10 @@
 <div class="flex justify-between items-center mb-6">
 	<div>
 		<h1 class="text-3xl font-bold">Entries</h1>
-		{#if filterLabel()}
+		{#if filterLabel}
 			<p class="text-sm text-base-content/50 mt-1">
-				Filtered: {filterLabel()} · <a href="/entries" class="underline">Clear</a>
+				Filtered: {filterLabel} ·
+				<button class="underline" onclick={() => goto('/entries')}>Clear</button>
 			</p>
 		{/if}
 	</div>
@@ -96,14 +104,19 @@
 
 {#if !viewRivers && uniqueRivers.length > 1}
 	<div class="mb-4">
-		<select class="select select-bordered select-sm" onchange={(e) => {
-			const val = (e.target as HTMLSelectElement).value;
-			filterRiverId = val ? parseInt(val) : null;
-		}}>
+		<select
+			class="select select-bordered select-sm"
+			onchange={(e) => {
+				const val = (e.target as HTMLSelectElement).value;
+				goto(val ? `/entries?river=${val}` : '/entries');
+			}}
+		>
 			<option value="">All Rivers ({entries.length})</option>
 			{#each uniqueRivers as river}
 				<option value={river?.id} selected={river?.id === filterRiverId}>
-					{river?.riverName}{river?.section ? ` — ${river.section}` : ''} ({entries.filter(e => e.riverId === river?.id).length})
+					{river?.riverName}{river?.section ? ` — ${river.section}` : ''} ({entries.filter(
+						(e) => e.riverId === river?.id
+					).length})
 				</option>
 			{/each}
 		</select>
@@ -115,7 +128,6 @@
 		<span class="loading loading-spinner loading-lg"></span>
 	</div>
 {:else if viewRivers}
-	<!-- Rivers view -->
 	{#if riverSummary.length === 0}
 		<div class="text-center py-12 text-base-content/50">
 			<p class="text-lg mb-2">No rivers yet</p>
@@ -124,12 +136,21 @@
 	{:else}
 		<div class="space-y-2">
 			{#each riverSummary as { river, count }}
-				<a href="/entries?river={river!.id}" class="card bg-base-100 shadow hover:shadow-md transition-shadow block">
+				<a
+					href="/entries?river={river!.id}"
+					class="card bg-base-100 shadow hover:shadow-md transition-shadow block"
+				>
 					<div class="card-body py-3">
 						<div class="flex justify-between items-center">
 							<div>
-								<h3 class="font-bold">{river!.riverName}{#if river!.section}<span class="font-normal text-base-content/50"> — {river!.section}</span>{/if}</h3>
-								<p class="text-xs text-base-content/50">{river!.state}{river!.classRating ? ` · Class ${river!.classRating}` : ''}</p>
+								<h3 class="font-bold">
+									{river!.riverName}{#if river!.section}<span class="font-normal text-base-content/50">
+											— {river!.section}</span
+										>{/if}
+								</h3>
+								<p class="text-xs text-base-content/50">
+									{river!.state}{river!.classRating ? ` · Class ${river!.classRating}` : ''}
+								</p>
 							</div>
 							<div class="text-right shrink-0 ml-4">
 								<div class="font-bold text-lg" style="color: var(--color-river)">{count}</div>
@@ -141,18 +162,21 @@
 			{/each}
 		</div>
 	{/if}
-{:else if filteredEntries().length === 0}
+{:else if filteredEntries.length === 0}
 	<div class="text-center py-12 text-base-content/50">
-		<p class="text-lg mb-2">No entries {filterLabel() ? `for ${filterLabel()}` : 'yet'}</p>
-		{#if !filterLabel()}
+		<p class="text-lg mb-2">No entries {filterLabel ? `for ${filterLabel}` : 'yet'}</p>
+		{#if !filterLabel}
 			<p class="text-sm">Log your first river day!</p>
 			<a href="/entries/new" class="btn btn-primary mt-4">Log a Day</a>
 		{/if}
 	</div>
 {:else}
 	<div class="space-y-3">
-		{#each filteredEntries() as entry}
-			<a href="/entries/{entry.id}" class="card bg-base-100 shadow hover:shadow-md transition-shadow block">
+		{#each filteredEntries as entry}
+			<a
+				href="/entries/{entry.id}"
+				class="card bg-base-100 shadow hover:shadow-md transition-shadow block"
+			>
 				<div class="card-body py-4">
 					<div class="flex justify-between items-start">
 						<div>
@@ -180,7 +204,9 @@
 							{/if}
 						</div>
 						<div class="text-right text-sm shrink-0 ml-4">
-							<div class="text-base-content/50">{new Date(entry.datetime).toLocaleDateString()}</div>
+							<div class="text-base-content/50">
+								{new Date(entry.datetime).toLocaleDateString()}
+							</div>
 							{#if entry.flow}
 								<div class="font-mono">{entry.flow} cfs</div>
 							{/if}
