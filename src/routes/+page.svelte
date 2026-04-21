@@ -174,22 +174,22 @@
 <h1 class="text-3xl font-bold mb-6">Dashboard</h1>
 
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-	<div class="stat bg-base-100 rounded-xl shadow p-4">
+	<a href="/entries" class="stat bg-base-100 rounded-xl shadow p-4 hover:shadow-md transition-shadow cursor-pointer">
 		<div class="stat-title text-xs">Total Days</div>
 		<div class="stat-value text-2xl" style="color: var(--color-river)">{loaded ? totalDays : '—'}</div>
-	</div>
-	<div class="stat bg-base-100 rounded-xl shadow p-4">
+	</a>
+	<a href="/entries?year={new Date().getFullYear()}" class="stat bg-base-100 rounded-xl shadow p-4 hover:shadow-md transition-shadow cursor-pointer">
 		<div class="stat-title text-xs">This Year</div>
 		<div class="stat-value text-2xl">{loaded ? thisYear : '—'}</div>
-	</div>
-	<div class="stat bg-base-100 rounded-xl shadow p-4">
+	</a>
+	<a href="/entries?month={new Date().getFullYear()}-{String(new Date().getMonth() + 1).padStart(2, '0')}" class="stat bg-base-100 rounded-xl shadow p-4 hover:shadow-md transition-shadow cursor-pointer">
 		<div class="stat-title text-xs">This Month</div>
 		<div class="stat-value text-2xl">{loaded ? thisMonth : '—'}</div>
-	</div>
-	<div class="stat bg-base-100 rounded-xl shadow p-4">
+	</a>
+	<a href="/entries?view=rivers" class="stat bg-base-100 rounded-xl shadow p-4 hover:shadow-md transition-shadow cursor-pointer">
 		<div class="stat-title text-xs">Rivers</div>
 		<div class="stat-value text-2xl">{loaded ? riverCount : '—'}</div>
-	</div>
+	</a>
 </div>
 
 {#if loaded && (yearEntries.length > 0 || monthEntries.length > 0)}
