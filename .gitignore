@@ -25,3 +25,7 @@ vite.config.ts.timestamp-*
 # Mutation reports
 reports/
 .stryker-tmp/
+
+# Playwright
+test-results/
+playwright-report/
