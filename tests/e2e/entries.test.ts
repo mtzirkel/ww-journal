@@ -20,6 +20,7 @@ async function seedEntry(
 ) {
 	await page.evaluate(async (e) => {
 		// Open Dexie DB directly — same origin, same IndexedDB
+		// @ts-expect-error absolute path resolved by the dev server at runtime, not TS
 		const { Dexie } = await import('/node_modules/dexie/dist/dexie.mjs').catch(
 			() => (window as any).Dexie
 		);
