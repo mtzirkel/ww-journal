@@ -157,6 +157,25 @@
 		return PAD_T + PLOT_H - ((flow - chartMinFlow) / chartFlowRange) * PLOT_H;
 	}
 
+	// Evenly spaced time axis labels (5 ticks) — independent of data density
+	const N_X_TICKS = 5;
+	function fmtXTick(d: Date) {
+		return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+	}
+	let chartXTicks = $derived.by(() => {
+		if (chartSorted.length === 0) return [] as { x: number; label: string }[];
+		if (chartSorted.length === 1 || chartTimeRange === 0) {
+			return [{ x: PAD_L + PLOT_W / 2, label: fmtXTick(new Date(chartSorted[0].datetime)) }];
+		}
+		const out: { x: number; label: string }[] = [];
+		for (let i = 0; i < N_X_TICKS; i++) {
+			const t = chartTimeMin + (chartTimeRange * i) / (N_X_TICKS - 1);
+			const x = PAD_L + (PLOT_W * i) / (N_X_TICKS - 1);
+			out.push({ x, label: fmtXTick(new Date(t)) });
+		}
+		return out;
+	});
+
 	let selectedEntry = $derived(selectedEntryId ? allEntries.find((e) => e.id === selectedEntryId) ?? null : null);
 	let selectedEntryRiver = $derived(selectedEntry ? allRivers.get(selectedEntry.riverId) ?? null : null);
 
@@ -315,13 +334,22 @@
 								{/each}
 							<text x={PAD_L - 8} y={PAD_T - 8} text-anchor="end" class="fill-base-content/40 text-[9px]">CFS</text>
 
-								<!-- Data points by section -->
+								<!-- Evenly spaced x-axis date labels -->
+								{#each chartXTicks as tick}
+									<text x={tick.x} y={CHART_H - 8} text-anchor="middle"
+										class="fill-base-content/50 text-[9px]"
+									>{tick.label}</text>
+								{/each}
+
+								<!-- Data points by section — flow shown on hover via <title> and in detail card on click -->
 								{#each chartSorted as entry, i}
 									<!-- Hit target -->
 									<circle cx={chartX(entry, i)} cy={chartY(entry.flow)} r="14"
 										fill="transparent" class="cursor-pointer"
 										onclick={() => selectedEntryId = selectedEntryId === entry.id ? null : entry.id}
-									/>
+									>
+										<title>{Math.round(entry.flow)} CFS — {new Date(entry.datetime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</title>
+									</circle>
 									<!-- Visible dot -->
 									<circle cx={chartX(entry, i)} cy={chartY(entry.flow)}
 										r={selectedEntryId === entry.id ? 8 : 6}
@@ -330,18 +358,9 @@
 										stroke-width="1.5"
 										class="cursor-pointer"
 										onclick={() => selectedEntryId = selectedEntryId === entry.id ? null : entry.id}
-									/>
-									<!-- Date label — only show if this date hasn't appeared yet -->
-									{#if i === 0 || chartSorted[i - 1].datetime.slice(0,10) !== entry.datetime.slice(0,10)}
-									<text x={chartX(entry, i)} y={CHART_H - 8} text-anchor="middle"
-										class="fill-base-content/50 text-[8px]"
-										transform="rotate(-35 {chartX(entry, i)} {CHART_H - 8})"
-									>{new Date(entry.datetime).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</text>
-									{/if}
-									<!-- Flow label above dot -->
-									<text x={chartX(entry, i)} y={chartY(entry.flow) - 10} text-anchor="middle"
-										class="fill-base-content/70 text-[10px] font-bold"
-									>{Math.round(entry.flow)}</text>
+									>
+										<title>{Math.round(entry.flow)} CFS — {new Date(entry.datetime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</title>
+									</circle>
 								{/each}
 						</svg>
 					</div>

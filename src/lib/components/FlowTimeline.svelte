@@ -59,6 +59,25 @@
 		sorted.map((e, i) => `${i === 0 ? 'M' : 'L'} ${xPos(e, i)} ${yPos(e.flow)}`).join(' ')
 	);
 
+	// Evenly spaced time axis labels (5 ticks across the range) — independent of data density
+	const N_X_TICKS = 5;
+	function fmtTick(d: Date) {
+		return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+	}
+	let xTicks = $derived.by(() => {
+		if (sorted.length === 0) return [] as { x: number; label: string }[];
+		if (sorted.length === 1 || timeRange === 0) {
+			return [{ x: padL + plotW / 2, label: fmtTick(new Date(sorted[0].datetime)) }];
+		}
+		const out: { x: number; label: string }[] = [];
+		for (let i = 0; i < N_X_TICKS; i++) {
+			const t = timeMin + (timeRange * i) / (N_X_TICKS - 1);
+			const x = padL + (plotW * i) / (N_X_TICKS - 1);
+			out.push({ x, label: fmtTick(new Date(t)) });
+		}
+		return out;
+	});
+
 	let currentFlowY = $derived(currentFlow !== null ? yPos(currentFlow) : null);
 
 	onMount(async () => {
@@ -147,7 +166,17 @@
 					/>
 				{/if}
 
-				<!-- Data points -->
+				<!-- Evenly spaced x-axis date labels -->
+				{#each xTicks as tick}
+					<text
+						x={tick.x}
+						y={chartH - 8}
+						text-anchor="middle"
+						class="fill-base-content/50 text-[9px]"
+					>{tick.label}</text>
+				{/each}
+
+				<!-- Data points — flow shown on hover via <title> and in the detail card on click -->
 				{#each sorted as entry, i}
 					<!-- Larger invisible hit target -->
 					<circle
@@ -157,7 +186,9 @@
 						fill="transparent"
 						class="cursor-pointer"
 						onclick={() => selectedEntry = selectedEntry?.id === entry.id ? null : entry}
-					/>
+					>
+						<title>{Math.round(entry.flow)} CFS — {new Date(entry.datetime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</title>
+					</circle>
 					<!-- Visible dot -->
 					<circle
 						cx={xPos(entry, i)}
@@ -168,22 +199,9 @@
 						stroke-width="1.5"
 						class="cursor-pointer transition-all"
 						onclick={() => selectedEntry = selectedEntry?.id === entry.id ? null : entry}
-					/>
-					<!-- Date label -->
-					<text
-						x={xPos(entry, i)}
-						y={chartH - 8}
-						text-anchor="middle"
-						class="fill-base-content/50 text-[9px]"
-						transform="rotate(-30 {xPos(entry, i)} {chartH - 8})"
-					>{new Date(entry.datetime).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</text>
-					<!-- Flow label on point -->
-					<text
-						x={xPos(entry, i)}
-						y={yPos(entry.flow) - 10}
-						text-anchor="middle"
-						class="fill-base-content/70 text-[10px] font-bold"
-					>{Math.round(entry.flow)}</text>
+					>
+						<title>{Math.round(entry.flow)} CFS — {new Date(entry.datetime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</title>
+					</circle>
 				{/each}
 
 				<!-- Current flow dashed line -->
