@@ -28,6 +28,12 @@
 	let maxFlow = $derived(Math.max(highestFlow, currentFlow ?? 0));
 	let flowRange = $derived(maxFlow - minFlow || 1);
 
+	// Time-proportional x-axis: gap between April 2018 and April 2019 is a year wide,
+	// not one dot wide. Falls back to even spacing if all entries are on the same day.
+	let timeMin = $derived(sorted.length ? new Date(sorted[0].datetime).getTime() : 0);
+	let timeMax = $derived(sorted.length ? new Date(sorted[sorted.length - 1].datetime).getTime() : 1);
+	let timeRange = $derived(timeMax - timeMin);
+
 	// Chart dimensions
 	const chartW = 600;
 	const chartH = 200;
@@ -38,9 +44,11 @@
 	const plotW = chartW - padL - padR;
 	const plotH = chartH - padT - padB;
 
-	function xPos(i: number) {
+	function xPos(entry: JournalEntry, i: number) {
 		if (sorted.length === 1) return padL + plotW / 2;
-		return padL + (i / (sorted.length - 1)) * plotW;
+		if (timeRange === 0) return padL + (i / (sorted.length - 1)) * plotW;
+		const t = new Date(entry.datetime).getTime();
+		return padL + ((t - timeMin) / timeRange) * plotW;
 	}
 
 	function yPos(flow: number) {
@@ -48,7 +56,7 @@
 	}
 
 	let linePath = $derived(
-		sorted.map((e, i) => `${i === 0 ? 'M' : 'L'} ${xPos(i)} ${yPos(e.flow)}`).join(' ')
+		sorted.map((e, i) => `${i === 0 ? 'M' : 'L'} ${xPos(e, i)} ${yPos(e.flow)}`).join(' ')
 	);
 
 	let currentFlowY = $derived(currentFlow !== null ? yPos(currentFlow) : null);
@@ -143,7 +151,7 @@
 				{#each sorted as entry, i}
 					<!-- Larger invisible hit target -->
 					<circle
-						cx={xPos(i)}
+						cx={xPos(entry, i)}
 						cy={yPos(entry.flow)}
 						r="14"
 						fill="transparent"
@@ -152,7 +160,7 @@
 					/>
 					<!-- Visible dot -->
 					<circle
-						cx={xPos(i)}
+						cx={xPos(entry, i)}
 						cy={yPos(entry.flow)}
 						r={selectedEntry?.id === entry.id ? 7 : 5}
 						fill={selectedEntry?.id === entry.id ? '#f59e0b' : 'var(--color-river)'}
@@ -163,15 +171,15 @@
 					/>
 					<!-- Date label -->
 					<text
-						x={xPos(i)}
+						x={xPos(entry, i)}
 						y={chartH - 8}
 						text-anchor="middle"
 						class="fill-base-content/50 text-[9px]"
-						transform="rotate(-30 {xPos(i)} {chartH - 8})"
+						transform="rotate(-30 {xPos(entry, i)} {chartH - 8})"
 					>{new Date(entry.datetime).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</text>
 					<!-- Flow label on point -->
 					<text
-						x={xPos(i)}
+						x={xPos(entry, i)}
 						y={yPos(entry.flow) - 10}
 						text-anchor="middle"
 						class="fill-base-content/70 text-[10px] font-bold"

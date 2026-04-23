@@ -142,9 +142,16 @@
 	const PLOT_W = CHART_W - PAD_L - PAD_R;
 	const PLOT_H = CHART_H - PAD_T - PAD_B;
 
-	function chartX(i: number) {
+	// Time-proportional x: a year gap between clusters is a year wide, not one dot wide.
+	let chartTimeMin = $derived(chartSorted.length ? new Date(chartSorted[0].datetime).getTime() : 0);
+	let chartTimeMax = $derived(chartSorted.length ? new Date(chartSorted[chartSorted.length - 1].datetime).getTime() : 1);
+	let chartTimeRange = $derived(chartTimeMax - chartTimeMin);
+
+	function chartX(entry: { datetime: string }, i: number) {
 		if (chartSorted.length <= 1) return PAD_L + PLOT_W / 2;
-		return PAD_L + (i / (chartSorted.length - 1)) * PLOT_W;
+		if (chartTimeRange === 0) return PAD_L + (i / (chartSorted.length - 1)) * PLOT_W;
+		const t = new Date(entry.datetime).getTime();
+		return PAD_L + ((t - chartTimeMin) / chartTimeRange) * PLOT_W;
 	}
 	function chartY(flow: number) {
 		return PAD_T + PLOT_H - ((flow - chartMinFlow) / chartFlowRange) * PLOT_H;
@@ -311,12 +318,12 @@
 								<!-- Data points by section -->
 								{#each chartSorted as entry, i}
 									<!-- Hit target -->
-									<circle cx={chartX(i)} cy={chartY(entry.flow)} r="14"
+									<circle cx={chartX(entry, i)} cy={chartY(entry.flow)} r="14"
 										fill="transparent" class="cursor-pointer"
 										onclick={() => selectedEntryId = selectedEntryId === entry.id ? null : entry.id}
 									/>
 									<!-- Visible dot -->
-									<circle cx={chartX(i)} cy={chartY(entry.flow)}
+									<circle cx={chartX(entry, i)} cy={chartY(entry.flow)}
 										r={selectedEntryId === entry.id ? 8 : 6}
 										fill={selectedEntryId === entry.id ? '#f59e0b' : (selectedGroup?.sections.find(s => s.riverId === entry.riverId)?.color ?? 'var(--color-river)')}
 										stroke={selectedEntryId === entry.id ? '#d97706' : 'white'}
@@ -326,13 +333,13 @@
 									/>
 									<!-- Date label — only show if this date hasn't appeared yet -->
 									{#if i === 0 || chartSorted[i - 1].datetime.slice(0,10) !== entry.datetime.slice(0,10)}
-									<text x={chartX(i)} y={CHART_H - 8} text-anchor="middle"
+									<text x={chartX(entry, i)} y={CHART_H - 8} text-anchor="middle"
 										class="fill-base-content/50 text-[8px]"
-										transform="rotate(-35 {chartX(i)} {CHART_H - 8})"
+										transform="rotate(-35 {chartX(entry, i)} {CHART_H - 8})"
 									>{new Date(entry.datetime).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</text>
 									{/if}
 									<!-- Flow label above dot -->
-									<text x={chartX(i)} y={chartY(entry.flow) - 10} text-anchor="middle"
+									<text x={chartX(entry, i)} y={chartY(entry.flow) - 10} text-anchor="middle"
 										class="fill-base-content/70 text-[10px] font-bold"
 									>{Math.round(entry.flow)}</text>
 								{/each}
