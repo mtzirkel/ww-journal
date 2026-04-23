@@ -70,7 +70,11 @@
 
 			await db.entries.put(entry);
 			await syncStore.refreshPendingCount();
-			sync(); // fire and forget — UI navigates immediately
+			try {
+				await sync();
+			} catch {
+				// swallow — entry is dirty locally, next sync will retry
+			}
 			goto('/entries');
 		} catch (err) {
 			console.error('[save] failed:', err);

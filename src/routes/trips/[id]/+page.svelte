@@ -77,7 +77,11 @@
 		await db.entries.where('tripId').equals(trip.id).modify({ tripId: null, dirty: true, updatedAt: now });
 		await db.trips.update(trip.id, { deletedAt: now, updatedAt: now, dirty: true });
 		await syncStore.refreshPendingCount();
-		sync();
+		try {
+			await sync();
+		} catch {
+			// swallow — trip is dirty locally, next sync will retry
+		}
 		goto('/trips');
 	}
 

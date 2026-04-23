@@ -66,7 +66,11 @@
 			dirty: true
 		});
 		await syncStore.refreshPendingCount();
-		sync();
+		try {
+			await sync();
+		} catch {
+			// swallow — entry is dirty locally, next sync will retry
+		}
 		goto('/entries');
 	}
 
