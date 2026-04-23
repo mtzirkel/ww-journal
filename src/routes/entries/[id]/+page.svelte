@@ -4,12 +4,14 @@
 	import { db, seedRivers } from '$lib/db/index.js';
 	import { fetchUsgsFlow } from '$lib/api/usgs.js';
 	import RiverAutocomplete from '$lib/components/RiverAutocomplete.svelte';
-	import type { River, JournalEntry } from '$lib/types.js';
+	import type { River, JournalEntry, Trip } from '$lib/types.js';
 	import { onMount } from 'svelte';
 	import { sync, syncStore } from '$lib/sync.svelte.js';
 
 	let entry = $state<JournalEntry | null>(null);
 	let river = $state<River | null>(null);
+	let trip = $state<Trip | null>(null);
+	let trips = $state<Trip[]>([]);
 	let editing = $state(false);
 
 	// Edit state
@@ -17,6 +19,7 @@
 	let editDatetime = $state('');
 	let editFlow = $state<number | null>(null);
 	let editDescription = $state('');
+	let editTripId = $state<string | null>(null);
 	let fetchingFlow = $state(false);
 	let saving = $state(false);
 
@@ -26,7 +29,9 @@
 		entry = await db.entries.get(id) ?? null;
 		if (entry) {
 			river = await db.rivers.get(entry.riverId) ?? null;
+			trip = entry.tripId ? (await db.trips.get(entry.tripId)) ?? null : null;
 		}
+		trips = (await db.trips.toArray()).filter((t) => !t.deletedAt).sort((a, b) => a.name.localeCompare(b.name));
 	});
 
 	function startEdit() {
@@ -35,6 +40,7 @@
 		editDatetime = new Date(entry.datetime).toISOString().slice(0, 16);
 		editFlow = entry.flow;
 		editDescription = entry.description;
+		editTripId = entry.tripId ?? null;
 		editing = true;
 	}
 
@@ -46,11 +52,13 @@
 			datetime: new Date(editDatetime).toISOString(),
 			flow: editFlow ?? 0,
 			description: editDescription,
+			tripId: editTripId,
 			updatedAt: new Date().toISOString(),
 			dirty: true
 		});
 		entry = await db.entries.get(entry.id) ?? null;
 		river = editRiver;
+		trip = editTripId ? (await db.trips.get(editTripId)) ?? null : null;
 		editing = false;
 		saving = false;
 		await syncStore.refreshPendingCount();
@@ -118,6 +126,18 @@
 				</div>
 			</div>
 
+			{#if trips.length > 0}
+				<div class="form-control mb-4">
+					<label class="label" for="edit-trip"><span class="label-text">Trip (optional)</span></label>
+					<select id="edit-trip" class="select select-bordered w-full" bind:value={editTripId}>
+						<option value={null}>No trip</option>
+						{#each trips as t}
+							<option value={t.id}>{t.name}</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
+
 			<div class="form-control mb-6">
 				<label class="label" for="edit-desc"><span class="label-text">Notes</span></label>
 				<textarea id="edit-desc" class="textarea textarea-bordered" rows="4" bind:value={editDescription}></textarea>
@@ -163,6 +183,12 @@
 						{river.state}
 						{#if river.classRating}· Class {river.classRating}{/if}
 					</p>
+				</div>
+			{/if}
+
+			{#if trip}
+				<div class="mt-3">
+					<a href="/trips/{trip.id}" class="badge badge-outline gap-1">⛰ {trip.name}</a>
 				</div>
 			{/if}
 
