@@ -18,6 +18,8 @@
 	let filterMonth = $derived(data.filterMonth);
 	let viewRivers = $derived(data.viewRivers);
 
+	let search = $state('');
+
 	onMount(() => {
 		let subscription: { unsubscribe: () => void } | undefined;
 
@@ -56,6 +58,17 @@
 		if (filterRiverId) result = result.filter((e) => e.riverId === filterRiverId);
 		if (filterYear) result = result.filter((e) => e.datetime.startsWith(filterYear!));
 		if (filterMonth) result = result.filter((e) => e.datetime.startsWith(filterMonth!));
+		const q = search.trim().toLowerCase();
+		if (q) {
+			result = result.filter((e) => {
+				if (e.river?.riverName?.toLowerCase().includes(q)) return true;
+				if (e.river?.section?.toLowerCase().includes(q)) return true;
+				if (e.description?.toLowerCase().includes(q)) return true;
+				if (e.trip?.name?.toLowerCase().includes(q)) return true;
+				if (e.tags?.some((t) => t.value.toLowerCase().includes(q) || t.category.toLowerCase().includes(q))) return true;
+				return false;
+			});
+		}
 		return result;
 	});
 
@@ -102,24 +115,32 @@
 	<a href="/entries/new" class="btn btn-primary btn-sm">+ Log a Day</a>
 </div>
 
-{#if !viewRivers && uniqueRivers.length > 1}
-	<div class="mb-4">
-		<select
-			class="select select-bordered select-sm"
-			onchange={(e) => {
-				const val = (e.target as HTMLSelectElement).value;
-				goto(val ? `/entries?river=${val}` : '/entries');
-			}}
-		>
-			<option value="">All Rivers ({entries.length})</option>
-			{#each uniqueRivers as river}
-				<option value={river?.id} selected={river?.id === filterRiverId}>
-					{river?.riverName}{river?.section ? ` — ${river.section}` : ''} ({entries.filter(
-						(e) => e.riverId === river?.id
-					).length})
-				</option>
-			{/each}
-		</select>
+{#if !viewRivers}
+	<div class="mb-4 flex flex-col sm:flex-row gap-2">
+		<input
+			type="search"
+			placeholder="Search river, notes, tag, trip..."
+			bind:value={search}
+			class="input input-bordered input-sm w-full sm:flex-1"
+		/>
+		{#if uniqueRivers.length > 1}
+			<select
+				class="select select-bordered select-sm w-full sm:w-auto"
+				onchange={(e) => {
+					const val = (e.target as HTMLSelectElement).value;
+					goto(val ? `/entries?river=${val}` : '/entries');
+				}}
+			>
+				<option value="">All Rivers ({entries.length})</option>
+				{#each uniqueRivers as river}
+					<option value={river?.id} selected={river?.id === filterRiverId}>
+						{river?.riverName}{river?.section ? ` — ${river.section}` : ''} ({entries.filter(
+							(e) => e.riverId === river?.id
+						).length})
+					</option>
+				{/each}
+			</select>
+		{/if}
 	</div>
 {/if}
 
