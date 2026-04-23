@@ -158,7 +158,7 @@ export async function pushChanges(userId: string, payload: SyncPayload): Promise
 					id, user_id, river_id, trip_id, date, datetime, flow, description, tags,
 					created_at, updated_at, deleted_at
 				) VALUES (
-					${e.id}, ${userId}, ${e.riverId}, ${e.tripId}, ${e.date}, ${new Date(e.datetime)}, ${e.flow},
+					${e.id}, ${userId}, ${e.riverId}, ${e.tripId}, ${e.datetime.slice(0, 10)}, ${new Date(e.datetime)}, ${e.flow},
 					${e.description}, ${sql.json(e.tags)},
 					${new Date(e.createdAt)}, ${new Date(e.updatedAt)},
 					${e.deletedAt ? new Date(e.deletedAt) : null}
