@@ -18,6 +18,21 @@
 
 	let dark = $state(false);
 
+	let dismissed = $state(false);
+	let dismissedError = $state<string | null>(null);
+
+	$effect(() => {
+		// Reset dismissed when a new/different error appears
+		if (syncStore.lastError !== dismissedError) {
+			dismissed = false;
+			dismissedError = syncStore.lastError;
+		}
+	});
+
+	const showErrorBanner = $derived(
+		syncStore.state === 'error' && !!syncStore.lastError && !dismissed
+	);
+
 	$effect(() => {
 		if (browser) {
 			const saved = localStorage.getItem('theme');
@@ -159,8 +174,17 @@
 		</div>
 	</header>
 
+	<!-- Sync error banner -->
+	{#if showErrorBanner}
+		<div class="alert alert-error fixed top-14 md:top-0 md:left-56 left-0 right-0 z-50 rounded-none px-4 py-2 flex items-center gap-3">
+			<span class="flex-1 text-sm">Sync failed: {syncStore.lastError}</span>
+			<button type="button" class="btn btn-sm btn-ghost" onclick={() => sync()}>Retry</button>
+			<button type="button" class="btn btn-sm btn-ghost" onclick={() => (dismissed = true)}>✕</button>
+		</div>
+	{/if}
+
 	<!-- Main content -->
-	<main class="container mx-auto px-4 py-6 max-w-3xl">
+	<main class="container mx-auto px-4 py-6 max-w-3xl" class:pt-16={showErrorBanner}>
 		{@render children()}
 	</main>
 
