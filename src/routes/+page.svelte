@@ -2,7 +2,7 @@
 	import { liveQuery } from 'dexie';
 	import { db, seedRivers } from '$lib/db/index.js';
 	import type { River, JournalEntry } from '$lib/types.js';
-	import FlowTimeline from '$lib/components/FlowTimeline.svelte';
+	import * as Plot from '@observablehq/plot';
 	import { onMount } from 'svelte';
 
 	const BAR_COLORS = [
@@ -115,65 +115,100 @@
 		selectedGroup ? allEntries.filter((e) => selectedGroup!.sections.some((s) => s.riverId === e.riverId)) : []
 	);
 
-	// Chart calculations
+	// Chart calculations — Observable Plot
 	let chartSorted = $derived([...selectedGroupEntries].sort((a, b) => a.datetime.localeCompare(b.datetime)));
 
-	// Fixed Y-axis: nice round ticks that stay stable regardless of data
-	function niceScale(min: number, max: number, ticks = 4): number[] {
-		if (min === max) { min = 0; max = max || 1; }
-		const range = max - min;
-		const step = Math.pow(10, Math.floor(Math.log10(range / ticks)));
-		const niceStep = [1, 2, 5, 10].map(f => f * step).find(s => range / s <= ticks + 1) ?? step;
-		const niceMin = Math.floor(min / niceStep) * niceStep;
-		const niceMax = Math.ceil(max / niceStep) * niceStep;
-		const result = [];
-		for (let v = niceMin; v <= niceMax + niceStep * 0.01; v += niceStep) result.push(Math.round(v));
-		return result;
-	}
+	let chartContainer = $state<HTMLDivElement | undefined>(undefined);
+	let tooltipText = $state<string | null>(null);
+	let tooltipX = $state(0);
+	let tooltipY = $state(0);
 
-	let chartRawMin = $derived(chartSorted.length > 0 ? Math.min(...chartSorted.map(e => e.flow)) : 0);
-	let chartRawMax = $derived(chartSorted.length > 0 ? Math.max(...chartSorted.map(e => e.flow)) : 1000);
-	let chartTicks = $derived(niceScale(chartRawMin, chartRawMax));
-	let chartMinFlow = $derived(chartTicks[0]);
-	let chartMaxFlow = $derived(chartTicks[chartTicks.length - 1]);
-	let chartFlowRange = $derived(chartMaxFlow - chartMinFlow || 1);
-
-	const CHART_W = 600, CHART_H = 220, PAD_L = 60, PAD_R = 20, PAD_T = 20, PAD_B = 40;
-	const PLOT_W = CHART_W - PAD_L - PAD_R;
-	const PLOT_H = CHART_H - PAD_T - PAD_B;
-
-	// Time-proportional x: a year gap between clusters is a year wide, not one dot wide.
-	let chartTimeMin = $derived(chartSorted.length ? new Date(chartSorted[0].datetime).getTime() : 0);
-	let chartTimeMax = $derived(chartSorted.length ? new Date(chartSorted[chartSorted.length - 1].datetime).getTime() : 1);
-	let chartTimeRange = $derived(chartTimeMax - chartTimeMin);
-
-	function chartX(entry: { datetime: string }, i: number) {
-		if (chartSorted.length <= 1) return PAD_L + PLOT_W / 2;
-		if (chartTimeRange === 0) return PAD_L + (i / (chartSorted.length - 1)) * PLOT_W;
-		const t = new Date(entry.datetime).getTime();
-		return PAD_L + ((t - chartTimeMin) / chartTimeRange) * PLOT_W;
-	}
-	function chartY(flow: number) {
-		return PAD_T + PLOT_H - ((flow - chartMinFlow) / chartFlowRange) * PLOT_H;
-	}
-
-	// Evenly spaced time axis labels (5 ticks) — independent of data density
-	const N_X_TICKS = 5;
-	function fmtXTick(d: Date) {
-		return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-	}
-	let chartXTicks = $derived.by(() => {
-		if (chartSorted.length === 0) return [] as { x: number; label: string }[];
-		if (chartSorted.length === 1 || chartTimeRange === 0) {
-			return [{ x: PAD_L + PLOT_W / 2, label: fmtXTick(new Date(chartSorted[0].datetime)) }];
+	// Build section color map for chart dots
+	let sectionColorMap = $derived(() => {
+		const map = new Map<number, string>();
+		if (selectedGroup) {
+			for (const sec of selectedGroup.sections) {
+				map.set(sec.riverId, sec.color);
+			}
 		}
-		const out: { x: number; label: string }[] = [];
-		for (let i = 0; i < N_X_TICKS; i++) {
-			const t = chartTimeMin + (chartTimeRange * i) / (N_X_TICKS - 1);
-			const x = PAD_L + (PLOT_W * i) / (N_X_TICKS - 1);
-			out.push({ x, label: fmtXTick(new Date(t)) });
-		}
-		return out;
+		return map;
+	});
+
+	$effect(() => {
+		if (!chartContainer || chartSorted.length === 0) return;
+
+		const colorMap = sectionColorMap();
+		const data = chartSorted.map(e => ({
+			date: new Date(e.datetime),
+			flow: e.flow,
+			id: e.id,
+			riverId: e.riverId,
+			color: colorMap.get(e.riverId) ?? '#238c91',
+			label: `${Math.round(e.flow)} CFS — ${new Date(e.datetime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+			section: (() => {
+				const r = allRivers.get(e.riverId);
+				return r?.section ?? null;
+			})()
+		}));
+
+		const plot = Plot.plot({
+			width: 580,
+			height: 220,
+			marginLeft: 55,
+			marginBottom: 35,
+			marginTop: 15,
+			marginRight: 15,
+			style: {
+				background: 'transparent',
+				color: 'currentColor',
+				fontSize: '11px'
+			},
+			x: {
+				type: 'utc',
+				label: null
+			},
+			y: {
+				label: 'CFS',
+				grid: true,
+				tickFormat: (d: number) => d >= 1000 ? (d / 1000).toFixed(1) + 'k' : String(d)
+			},
+			marks: [
+				Plot.ruleY([0], { stroke: 'currentColor', strokeOpacity: 0.1 }),
+				Plot.dot(data, {
+					x: 'date',
+					y: 'flow',
+					r: 6,
+					fill: 'color',
+					stroke: 'white',
+					strokeWidth: 1.5
+				})
+			]
+		});
+
+		// Add click + hover handling on dots
+		const dots = plot.querySelectorAll('g[aria-label="dot"] circle');
+		dots.forEach((circle, i) => {
+			if (i < data.length) {
+				const el = circle as SVGCircleElement;
+				el.style.cursor = 'pointer';
+				el.addEventListener('click', () => {
+					selectedEntryId = selectedEntryId === data[i].id ? null : data[i].id;
+				});
+				el.addEventListener('mouseenter', (ev: MouseEvent) => {
+					tooltipX = ev.clientX;
+					tooltipY = ev.clientY - 12;
+					const sec = data[i].section ? ` · ${data[i].section}` : '';
+					tooltipText = `${data[i].label}${sec}`;
+				});
+				el.addEventListener('mouseleave', () => {
+					tooltipText = null;
+				});
+			}
+		});
+
+		chartContainer.replaceChildren(plot);
+
+		return () => plot.remove();
 	});
 
 	let selectedEntry = $derived(selectedEntryId ? allEntries.find((e) => e.id === selectedEntryId) ?? null : null);
@@ -320,49 +355,9 @@
 						</div>
 					</div>
 
-					<!-- Multi-section flow chart -->
+					<!-- Observable Plot flow chart -->
 					<div class="mt-4 overflow-x-auto">
-						<svg viewBox="0 0 {CHART_W} {CHART_H}" class="w-full max-w-[600px]">
-							<!-- Y axis -->
-								{#each chartTicks as tick}
-									<text x={PAD_L - 8} y={chartY(tick)}
-										text-anchor="end" dominant-baseline="middle" class="fill-base-content/40 text-[10px]"
-									>{tick >= 1000 ? (tick/1000).toFixed(1) + 'k' : tick}</text>
-									<line x1={PAD_L} x2={PAD_L + PLOT_W}
-										y1={chartY(tick)} y2={chartY(tick)}
-										class="stroke-base-content/10" stroke-dasharray="4 4" />
-								{/each}
-							<text x={PAD_L - 8} y={PAD_T - 8} text-anchor="end" class="fill-base-content/40 text-[9px]">CFS</text>
-
-								<!-- Evenly spaced x-axis date labels -->
-								{#each chartXTicks as tick}
-									<text x={tick.x} y={CHART_H - 8} text-anchor="middle"
-										class="fill-base-content/50 text-[9px]"
-									>{tick.label}</text>
-								{/each}
-
-								<!-- Data points by section — flow shown on hover via <title> and in detail card on click -->
-								{#each chartSorted as entry, i}
-									<!-- Hit target -->
-									<circle cx={chartX(entry, i)} cy={chartY(entry.flow)} r="14"
-										fill="transparent" class="cursor-pointer"
-										onclick={() => selectedEntryId = selectedEntryId === entry.id ? null : entry.id}
-									>
-										<title>{Math.round(entry.flow)} CFS — {new Date(entry.datetime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</title>
-									</circle>
-									<!-- Visible dot -->
-									<circle cx={chartX(entry, i)} cy={chartY(entry.flow)}
-										r={selectedEntryId === entry.id ? 8 : 6}
-										fill={selectedEntryId === entry.id ? '#f59e0b' : (selectedGroup?.sections.find(s => s.riverId === entry.riverId)?.color ?? 'var(--color-river)')}
-										stroke={selectedEntryId === entry.id ? '#d97706' : 'white'}
-										stroke-width="1.5"
-										class="cursor-pointer"
-										onclick={() => selectedEntryId = selectedEntryId === entry.id ? null : entry.id}
-									>
-										<title>{Math.round(entry.flow)} CFS — {new Date(entry.datetime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</title>
-									</circle>
-								{/each}
-						</svg>
+						<div bind:this={chartContainer}></div>
 					</div>
 
 					<!-- Selected entry detail -->
@@ -439,6 +434,12 @@
 	</div>
 {/if}
 
+{#if tooltipText}
+	<div class="chart-tooltip" style="left: {tooltipX}px; top: {tooltipY}px;">
+		{tooltipText}
+	</div>
+{/if}
+
 <style>
 	.timeline-panel {
 		animation: panel-open 0.4s cubic-bezier(0.16, 1, 0.3, 1);
@@ -460,5 +461,20 @@
 			transform: perspective(600px) rotateX(0deg);
 			max-height: 800px;
 		}
+	}
+
+	.chart-tooltip {
+		position: fixed;
+		transform: translate(-50%, -100%);
+		background: oklch(0.25 0.01 260);
+		color: oklch(0.9 0 0);
+		border: 1px solid oklch(0.35 0.01 260);
+		border-radius: 6px;
+		padding: 4px 10px;
+		font-size: 12px;
+		white-space: nowrap;
+		pointer-events: none;
+		z-index: 50;
+		box-shadow: 0 4px 12px oklch(0 0 0 / 0.4);
 	}
 </style>

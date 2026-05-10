@@ -7,9 +7,9 @@ Offline-first PWA for logging whitewater kayaking days. SvelteKit + TypeScript +
 - **Client data**: IndexedDB via Dexie.js — all data lives locally, works offline
 - **Server data**: Postgres (not yet wired up — Phase 3)
 - **Auth**: noegos-auth service via JWT cookie on `.noegosunderwater.com`
-- **Charts**: CSS bar charts (LayerCake planned for future)
-- **Maps**: Leaflet with OpenStreetMap tiles
-- **Deployment**: adapter-node behind Caddy at journal.noegosunderwater.com
+- **Charts**: Observable Plot (replaced hand-rolled SVG, May 2026)
+- **Maps**: MapLibre GL + MapTiler outdoor-v2 (replaced Leaflet, May 2026)
+- **Deployment**: adapter-node behind Caddy at ww-journal.noegosunderwater.com
 
 ## Development
 

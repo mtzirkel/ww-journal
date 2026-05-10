@@ -9,13 +9,7 @@
 	import { onMount } from 'svelte';
 
 	let selectedRiver = $state<River | null>(null);
-	let datetime = $state(new Date().toISOString().slice(0, 16)); // datetime-local: "YYYY-MM-DDTHH:MM"
-	// Default to noon so same-day laps are distinct even if time isn't changed
-	$effect.pre(() => {
-		if (datetime.endsWith('T00:00')) {
-			datetime = datetime.slice(0, 10) + 'T12:00';
-		}
-	});
+	let date = $state(new Date().toISOString().slice(0, 10)); // just the date, time assigned on save
 	let flow = $state<number | null>(null);
 	let description = $state('');
 	let tripId = $state<string | null>(null);
@@ -30,17 +24,16 @@
 	});
 
 	async function fetchFlow() {
-		if (!selectedRiver?.externalGaugeId || !datetime || selectedRiver.externalGaugeSource !== 'usgs') return;
+		if (!selectedRiver?.externalGaugeId || !date || selectedRiver.externalGaugeSource !== 'usgs') return;
 		fetchingFlow = true;
-		const dateOnly = datetime.slice(0, 10);
-		const result = await fetchUsgsFlow(selectedRiver.externalGaugeId, dateOnly);
+		const result = await fetchUsgsFlow(selectedRiver.externalGaugeId, date);
 		if (result !== null) flow = Math.round(result);
 		fetchingFlow = false;
 	}
 
-	// Auto-fetch flow when both river and datetime are set
+	// Auto-fetch flow when both river and date are set
 	$effect(() => {
-		if (selectedRiver?.externalGaugeId && selectedRiver.externalGaugeSource === 'usgs' && datetime) {
+		if (selectedRiver?.externalGaugeId && selectedRiver.externalGaugeSource === 'usgs' && date) {
 			fetchFlow();
 		}
 	});
@@ -48,15 +41,23 @@
 	let saveError = $state<string | null>(null);
 
 	async function save() {
-		if (!selectedRiver || !datetime) return;
+		if (!selectedRiver || !date) return;
 		saving = true;
 		saveError = null;
 
 		try {
+			// Assign time based on how many entries already exist for this date
+			// First entry = noon, second = 2pm, third = 4pm, etc. (capped at 10pm)
+			const existingCount = await db.entries
+				.filter((e) => !e.deletedAt && e.datetime.startsWith(date))
+				.count();
+			const hour = Math.min(12 + existingCount * 2, 22);
+			const datetime = `${date}T${String(hour).padStart(2, '0')}:00:00.000Z`;
+
 			const now = new Date().toISOString();
 			const entry: JournalEntry = {
 				id: crypto.randomUUID(),
-				datetime: new Date(datetime).toISOString(),
+				datetime,
 				riverId: selectedRiver.id,
 				flow: flow ?? 0,
 				description,
@@ -87,7 +88,7 @@
 	let canFetchFlow = $derived(
 		selectedRiver?.externalGaugeId &&
 		selectedRiver?.externalGaugeSource === 'usgs' &&
-		datetime
+		date
 	);
 </script>
 
@@ -113,10 +114,10 @@
 
 		<div class="grid grid-cols-2 gap-4 mb-4">
 			<div class="form-control">
-				<label class="label" for="datetime">
-						<span class="label-text">Date & Time</span>
+				<label class="label" for="date">
+						<span class="label-text">Date</span>
 					</label>
-					<input type="datetime-local" id="datetime" class="input input-bordered" bind:value={datetime} />
+					<input type="date" id="date" class="input input-bordered" bind:value={date} />
 			</div>
 			<div class="form-control">
 				<label class="label" for="flow">
@@ -189,7 +190,7 @@
 
 		<button
 			class="btn btn-primary w-full"
-			disabled={!selectedRiver || !datetime || saving}
+			disabled={!selectedRiver || !date || saving}
 			onclick={save}
 		>
 			{saving ? 'Saving...' : 'Save Entry'}
