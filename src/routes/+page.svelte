@@ -4,6 +4,7 @@
 	import type { River, JournalEntry } from '$lib/types.js';
 	import * as Plot from '@observablehq/plot';
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 
 	const BAR_COLORS = [
 		'#238c91', '#e06c53', '#6366f1', '#22c55e', '#f59e0b',
@@ -34,7 +35,6 @@
 	let loaded = $state(false);
 
 	let selectedRiverName = $state<string | null>(null);
-	let selectedEntryId = $state<string | null>(null);
 
 	onMount(() => {
 		let subscription: { unsubscribe: () => void } | undefined;
@@ -192,7 +192,7 @@
 				const el = circle as SVGCircleElement;
 				el.style.cursor = 'pointer';
 				el.addEventListener('click', () => {
-					selectedEntryId = selectedEntryId === data[i].id ? null : data[i].id;
+					goto(`/entries/${data[i].id}`);
 				});
 				el.addEventListener('mouseenter', (ev: MouseEvent) => {
 					tooltipX = ev.clientX;
@@ -211,8 +211,6 @@
 		return () => plot.remove();
 	});
 
-	let selectedEntry = $derived(selectedEntryId ? allEntries.find((e) => e.id === selectedEntryId) ?? null : null);
-	let selectedEntryRiver = $derived(selectedEntry ? allRivers.get(selectedEntry.riverId) ?? null : null);
 
 	// Year in review stats
 	let yearEntries = $derived(allEntries.filter((e) => e.datetime.startsWith(new Date().getFullYear().toString())));
@@ -359,32 +357,6 @@
 					<div class="mt-4 overflow-x-auto">
 						<div bind:this={chartContainer}></div>
 					</div>
-
-					<!-- Selected entry detail -->
-					{#if selectedEntry}
-						<div class="bg-base-200 rounded-lg p-4 mt-4">
-							<div class="flex justify-between items-start">
-								<div>
-									<p class="font-bold">
-										{selectedEntryRiver?.riverName ?? 'Unknown'}
-										{#if selectedEntryRiver?.section}
-											<span class="font-normal text-base-content/50"> — {selectedEntryRiver.section}</span>
-										{/if}
-									</p>
-									<p class="text-sm text-base-content/50">
-										{new Date(selectedEntry.datetime).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-										&middot; {Math.round(selectedEntry.flow)} CFS
-									</p>
-								</div>
-								<a href="/entries/{selectedEntry.id}" class="btn btn-ghost btn-xs">View &rarr;</a>
-							</div>
-							{#if selectedEntry.description}
-								<p class="mt-3 text-sm whitespace-pre-wrap">{selectedEntry.description}</p>
-							{:else}
-								<p class="mt-3 text-sm text-base-content/40 italic">No notes for this day.</p>
-							{/if}
-						</div>
-					{/if}
 				</div>
 			</div>
 		</div>
