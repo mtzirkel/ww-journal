@@ -13,6 +13,13 @@
 	let newDescription = $state('');
 	let saving = $state(false);
 
+	// Inline edit state
+	let editingId = $state<string | null>(null);
+	let editName = $state('');
+	let editDescription = $state('');
+	let editSaving = $state(false);
+	let editError = $state<string | null>(null);
+
 	onMount(() => {
 		let subscription: { unsubscribe: () => void } | undefined;
 
@@ -71,6 +78,56 @@
 		await syncStore.refreshPendingCount();
 		sync();
 	}
+
+	function startEdit(trip: Trip & { entryCount: number }, event: MouseEvent) {
+		event.preventDefault();
+		event.stopPropagation();
+		editingId = trip.id;
+		editName = trip.name;
+		editDescription = trip.description ?? '';
+		editError = null;
+	}
+
+	function cancelEdit(event?: MouseEvent) {
+		event?.stopPropagation();
+		editingId = null;
+		editName = '';
+		editDescription = '';
+		editError = null;
+	}
+
+	async function saveEdit(event?: MouseEvent) {
+		event?.stopPropagation();
+		if (!editName.trim()) return;
+		if (!editingId) return;
+		editSaving = true;
+		editError = null;
+		try {
+			const now = new Date().toISOString();
+			await db.trips.update(editingId, {
+				name: editName.trim(),
+				description: editDescription.trim(),
+				updatedAt: now,
+				dirty: true
+			});
+			editingId = null;
+			await syncStore.refreshPendingCount();
+			sync();
+		} catch (err) {
+			editError = err instanceof Error ? err.message : 'Failed to save. Please try again.';
+		} finally {
+			editSaving = false;
+		}
+	}
+
+	function handleEditKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter' && !event.shiftKey) {
+			event.preventDefault();
+			saveEdit();
+		} else if (event.key === 'Escape') {
+			cancelEdit();
+		}
+	}
 </script>
 
 <div class="flex justify-between items-center mb-6">
@@ -108,27 +165,91 @@
 {:else}
 	<div class="space-y-3">
 		{#each trips as trip}
-			<a href="/trips/{trip.id}" class="card bg-base-100 shadow hover:shadow-md transition-shadow block">
-				<div class="card-body py-4">
-					<div class="flex justify-between items-start">
-						<div>
-							<h3 class="font-bold text-lg">{trip.name}</h3>
-							{#if trip.description}
-								<p class="text-sm text-base-content/60 mt-1 line-clamp-1">{trip.description}</p>
-							{/if}
+			{#if editingId === trip.id}
+				<!-- Edit mode: non-navigable card with inline form -->
+				<div class="card bg-base-100 shadow border border-primary/40">
+					<div class="card-body py-4">
+						<div class="form-control mb-2">
+							<input
+								type="text"
+								class="input input-bordered w-full font-bold text-lg"
+								bind:value={editName}
+								placeholder="Trip name"
+								disabled={editSaving}
+								onkeydown={handleEditKeydown}
+								autofocus
+							/>
 						</div>
-						<div class="text-right shrink-0 ml-4">
-							<div class="badge badge-outline">{trip.entryCount} day{trip.entryCount !== 1 ? 's' : ''}</div>
+						<div class="form-control mb-3">
+							<textarea
+								class="textarea textarea-bordered w-full text-sm"
+								rows="2"
+								bind:value={editDescription}
+								placeholder="Description (optional)"
+								disabled={editSaving}
+								onkeydown={handleEditKeydown}
+							></textarea>
+						</div>
+						{#if editError}
+							<p class="text-error text-sm mb-2">{editError}</p>
+						{/if}
+						<div class="flex gap-2 justify-end">
+							<button
+								class="btn btn-ghost btn-sm"
+								disabled={editSaving}
+								onclick={cancelEdit}
+							>
+								Cancel
+							</button>
+							<button
+								class="btn btn-primary btn-sm"
+								disabled={!editName.trim() || editSaving}
+								onclick={saveEdit}
+							>
+								{#if editSaving}
+									<span class="loading loading-spinner loading-xs"></span>
+									Saving…
+								{:else}
+									Save
+								{/if}
+							</button>
 						</div>
 					</div>
-					{#if trip.startDate}
-						<p class="text-xs text-base-content/40 mt-2">
-							{new Date(trip.startDate).toLocaleDateString()}
-							{#if trip.endDate}— {new Date(trip.endDate).toLocaleDateString()}{/if}
-						</p>
-					{/if}
 				</div>
-			</a>
+			{:else}
+				<!-- View mode: navigable card with edit button -->
+				<a href="/trips/{trip.id}" class="card bg-base-100 shadow hover:shadow-md transition-shadow block group">
+					<div class="card-body py-4">
+						<div class="flex justify-between items-start">
+							<div class="min-w-0 flex-1">
+								<h3 class="font-bold text-lg">{trip.name}</h3>
+								{#if trip.description}
+									<p class="text-sm text-base-content/60 mt-1 line-clamp-1">{trip.description}</p>
+								{/if}
+							</div>
+							<div class="flex items-center gap-2 shrink-0 ml-4">
+								<div class="badge badge-outline">{trip.entryCount} day{trip.entryCount !== 1 ? 's' : ''}</div>
+								<button
+									class="btn btn-ghost btn-xs opacity-0 group-hover:opacity-100 transition-opacity"
+									title="Edit trip"
+									onclick={(e) => startEdit(trip, e)}
+									aria-label="Edit trip"
+								>
+									<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+										<path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z" />
+									</svg>
+								</button>
+							</div>
+						</div>
+						{#if trip.startDate}
+							<p class="text-xs text-base-content/40 mt-2">
+								{new Date(trip.startDate).toLocaleDateString()}
+								{#if trip.endDate}— {new Date(trip.endDate).toLocaleDateString()}{/if}
+							</p>
+						{/if}
+					</div>
+				</a>
+			{/if}
 		{/each}
 	</div>
 {/if}
