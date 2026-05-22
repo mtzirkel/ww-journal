@@ -24,6 +24,7 @@
 	let mapEl = $state<HTMLDivElement | undefined>(undefined);
 	let mapInstance: import('maplibre-gl').Map | null = null;
 	let mapMounted = false; // plain var — not reactive, just a guard
+	let highlightedRiverId = $state<number | null>(null);
 
 	// Unique geo-located rivers in this trip, with their entry dates
 	let geoRivers = $derived.by(() => {
@@ -70,6 +71,7 @@
 					type: 'Feature' as const,
 					geometry: { type: 'Point' as const, coordinates: [river.lon!, river.lat!] },
 					properties: {
+						riverId: river.id,
 						riverName: river.riverName,
 						section: river.section ?? '',
 						entryCount: entryDates.length,
@@ -125,7 +127,7 @@
 				}
 			});
 
-			// Click → popup
+			// Click → popup + scroll timeline
 			map.on('click', 'trip-rivers-dot', (e) => {
 				const f = e.features?.[0];
 				if (!f) return;
@@ -142,6 +144,9 @@
 						</div>
 					`)
 					.addTo(map);
+
+				// Scroll to and highlight the first entry for this river in the timeline
+				scrollToRiver(p.riverId);
 			});
 
 			map.on('mouseenter', 'trip-rivers-dot', () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -202,6 +207,27 @@
 	onDestroy(() => {
 		mapInstance?.remove();
 	});
+
+	let highlightTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function scrollToRiver(riverId: number) {
+		// Find the first entry in the timeline for this river
+		const firstEntry = entries.find(e => e.riverId === riverId);
+		if (!firstEntry?.id) return;
+
+		// Scroll the entry into view
+		const el = document.getElementById(`entry-row-${firstEntry.id}`);
+		if (el) {
+			el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+		}
+
+		// Flash highlight: set for 1.5s, then clear
+		if (highlightTimer) clearTimeout(highlightTimer);
+		highlightedRiverId = riverId;
+		highlightTimer = setTimeout(() => {
+			highlightedRiverId = null;
+		}, 1500);
+	}
 
 	function startEdit() {
 		if (!trip) return;
@@ -359,7 +385,14 @@
 				{@const monthStr = entryDate.toLocaleDateString('en-US', { month: 'short' })}
 				{@const dayNum = entryDate.getDate()}
 
-				<div class="timeline-row flex gap-3 sm:gap-4 mb-4 relative items-start">
+				<div
+					id="entry-row-{entry.id}"
+					class="timeline-row flex gap-3 sm:gap-4 mb-4 relative items-start transition-all duration-500"
+					class:ring-2={highlightedRiverId === entry.riverId}
+					class:ring-primary={highlightedRiverId === entry.riverId}
+					class:ring-offset-2={highlightedRiverId === entry.riverId}
+					class:rounded-xl={highlightedRiverId === entry.riverId}
+				>
 					<!-- Date badge -->
 					<div class="timeline-badge shrink-0 flex flex-col items-center justify-center bg-base-100 border border-base-300 rounded-xl shadow-sm w-14 sm:w-16 py-2 z-10">
 						<span class="text-[10px] uppercase tracking-wide text-base-content/50 leading-none">{monthStr}</span>
