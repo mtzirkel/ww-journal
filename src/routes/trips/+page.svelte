@@ -13,14 +13,19 @@
 	let newDescription = $state('');
 	let saving = $state(false);
 
+	// Delete confirmation state
+	let confirmDeleteTrip = $state<(Trip & { entryCount: number }) | null>(null);
+	let deleting = $state(false);
+	let deleteError = $state<string | null>(null);
+
 	// Entry assignment state
-	let assigningTrip = $state<(Trip & { entryCount: number }) | null>(null);
+	let assignTrip = $state<(Trip & { entryCount: number }) | null>(null);
 	let assignEntries = $state<(JournalEntry & { river?: River })[]>([]);
+	let assignLoaded = $state(false);
 	let assignSearch = $state('');
-	let assignLoading = $state(false);
 	let assignError = $state<string | null>(null);
 	let rivers = $state<Map<number, River>>(new Map());
-	let riversLoaded = $state(false);
+	let assignSubscription: { unsubscribe: () => void } | undefined;
 
 	onMount(() => {
 		let subscription: { unsubscribe: () => void } | undefined;
@@ -44,7 +49,10 @@
 			});
 		})();
 
-		return () => { subscription?.unsubscribe(); };
+		return () => {
+			subscription?.unsubscribe();
+			assignSubscription?.unsubscribe();
+		};
 	});
 
 	async function createTrip() {
@@ -70,67 +78,91 @@
 		sync();
 	}
 
-	async function deleteTrip(id: string) {
-		if (!confirm('Delete this trip? Entries will be unlinked, not deleted.')) return;
-		const now = new Date().toISOString();
-		// Unlink entries
-		await db.entries.where('tripId').equals(id).modify({ tripId: null, dirty: true, updatedAt: now });
-		// Soft delete trip
-		await db.trips.update(id, { deletedAt: now, updatedAt: now, dirty: true });
-		await syncStore.refreshPendingCount();
-		sync();
+	function openDeleteConfirm(trip: Trip & { entryCount: number }, e: Event) {
+		e.preventDefault();
+		e.stopPropagation();
+		confirmDeleteTrip = trip;
+		deleteError = null;
 	}
 
-	// --- Entry assignment ---
+	function cancelDelete() {
+		if (deleting) return;
+		confirmDeleteTrip = null;
+		deleteError = null;
+	}
+
+	async function confirmDelete() {
+		if (!confirmDeleteTrip) return;
+		deleting = true;
+		deleteError = null;
+		try {
+			const id = confirmDeleteTrip.id;
+			const now = new Date().toISOString();
+			// Unlink entries
+			await db.entries.where('tripId').equals(id).modify({ tripId: null, dirty: true, updatedAt: now });
+			// Soft delete trip
+			await db.trips.update(id, { deletedAt: now, updatedAt: now, dirty: true });
+			await syncStore.refreshPendingCount();
+			sync();
+			confirmDeleteTrip = null;
+		} catch (err) {
+			deleteError = err instanceof Error ? err.message : String(err);
+		} finally {
+			deleting = false;
+		}
+	}
 
 	async function openAssign(trip: Trip & { entryCount: number }, e: Event) {
 		e.preventDefault();
 		e.stopPropagation();
-		assigningTrip = trip;
+		assignTrip = trip;
 		assignSearch = '';
 		assignError = null;
-		assignLoading = true;
+		assignLoaded = false;
 
-		try {
-			if (!riversLoaded) {
-				await seedRivers();
-				const allRivers = await db.rivers.toArray();
-				rivers = new Map(allRivers.map((r) => [r.id, r]));
-				riversLoaded = true;
-			}
-			const all = await db.entries.orderBy('datetime').reverse().toArray();
-			assignEntries = all
-				.filter((e) => !e.deletedAt)
-				.map((e) => ({ ...e, river: rivers.get(e.riverId) }));
-		} catch (err) {
-			assignError = err instanceof Error ? err.message : String(err);
-		} finally {
-			assignLoading = false;
+		// Load rivers lazily (first open)
+		if (rivers.size === 0) {
+			await seedRivers();
+			const allRivers = await db.rivers.toArray();
+			rivers = new Map(allRivers.map((r) => [r.id, r]));
 		}
+
+		// Live subscription to all non-deleted entries
+		assignSubscription?.unsubscribe();
+		const observable = liveQuery(async () => {
+			const all = await db.entries.orderBy('datetime').reverse().toArray();
+			return all.filter((e) => !e.deletedAt);
+		});
+		assignSubscription = observable.subscribe((value) => {
+			assignEntries = value.map((e) => ({ ...e, river: rivers.get(e.riverId) }));
+			assignLoaded = true;
+		});
 	}
 
 	function closeAssign() {
-		assigningTrip = null;
+		assignSubscription?.unsubscribe();
+		assignSubscription = undefined;
+		assignTrip = null;
 		assignEntries = [];
-		assignSearch = '';
+		assignLoaded = false;
 		assignError = null;
 	}
 
-	async function toggleEntry(entryId: string, currentlyAssigned: boolean) {
-		if (!assigningTrip) return;
-		const now = new Date().toISOString();
-		if (currentlyAssigned) {
-			await db.entries.update(entryId, { tripId: null, dirty: true, updatedAt: now });
-		} else {
-			await db.entries.update(entryId, { tripId: assigningTrip.id, dirty: true, updatedAt: now });
+	async function toggleEntry(entry: JournalEntry & { river?: River }) {
+		if (!assignTrip || !entry.id) return;
+		assignError = null;
+		try {
+			const now = new Date().toISOString();
+			if (entry.tripId === assignTrip.id) {
+				await db.entries.update(entry.id, { tripId: null, dirty: true, updatedAt: now });
+			} else {
+				await db.entries.update(entry.id, { tripId: assignTrip.id, dirty: true, updatedAt: now });
+			}
+			await syncStore.refreshPendingCount();
+			sync();
+		} catch (err) {
+			assignError = err instanceof Error ? err.message : String(err);
 		}
-		// Refresh local list so checkboxes update immediately
-		const all = await db.entries.orderBy('datetime').reverse().toArray();
-		assignEntries = all
-			.filter((e) => !e.deletedAt)
-			.map((e) => ({ ...e, river: rivers.get(e.riverId) }));
-		await syncStore.refreshPendingCount();
-		sync();
 	}
 
 	let filteredAssignEntries = $derived.by(() => {
@@ -144,6 +176,10 @@
 			return false;
 		});
 	});
+
+	let assignedCount = $derived(
+		assignEntries.filter((e) => assignTrip && e.tripId === assignTrip.id).length
+	);
 </script>
 
 <div class="flex justify-between items-center mb-6">
@@ -192,19 +228,26 @@
 						</div>
 						<div class="flex items-center gap-2 shrink-0 ml-4">
 							<div class="badge badge-outline">{trip.entryCount} day{trip.entryCount !== 1 ? 's' : ''}</div>
+							<!-- Assign entries button -->
 							<button
 								class="btn btn-ghost btn-xs"
 								onclick={(e) => openAssign(trip, e)}
-								title="Assign entries to this trip"
+								title="Assign entries"
+								aria-label="Assign entries to {trip.name}"
 							>
-								Assign entries
+								<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+								</svg>
 							</button>
 							<button
 								class="btn btn-ghost btn-xs text-error"
-								onclick={(e) => { e.preventDefault(); e.stopPropagation(); deleteTrip(trip.id); }}
+								onclick={(e) => openDeleteConfirm(trip, e)}
 								title="Delete trip"
+								aria-label="Delete {trip.name}"
 							>
-								Delete
+								<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+								</svg>
 							</button>
 						</div>
 					</div>
@@ -220,48 +263,97 @@
 	</div>
 {/if}
 
-<!-- Entry Assignment Modal -->
-{#if assigningTrip}
-	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Assign entries to {assigningTrip.name}">
-		<div class="modal-box max-w-2xl flex flex-col max-h-[80vh]">
-			<div class="flex justify-between items-center mb-3 shrink-0">
-				<h3 class="font-bold text-lg">Assign entries — {assigningTrip.name}</h3>
-				<button class="btn btn-ghost btn-sm" onclick={closeAssign}>✕</button>
+<!-- Delete Confirmation Modal -->
+{#if confirmDeleteTrip}
+	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Delete trip confirmation">
+		<div class="modal-box">
+			<h3 class="font-bold text-lg mb-2">Delete trip?</h3>
+			<p class="mb-1">
+				Are you sure you want to delete <span class="font-semibold">"{confirmDeleteTrip.name}"</span>?
+			</p>
+			<p class="text-sm text-base-content/60 mb-4">
+				{confirmDeleteTrip.entryCount > 0
+					? `${confirmDeleteTrip.entryCount} linked ${confirmDeleteTrip.entryCount === 1 ? 'entry' : 'entries'} will be unlinked but not deleted. `
+					: ''}This action cannot be undone.
+			</p>
+
+			{#if deleteError}
+				<div class="alert alert-error mb-4">
+					<span>{deleteError}</span>
+				</div>
+			{/if}
+
+			<div class="modal-action">
+				<button class="btn btn-ghost" onclick={cancelDelete} disabled={deleting}>
+					Cancel
+				</button>
+				<button class="btn btn-error" onclick={confirmDelete} disabled={deleting}>
+					{#if deleting}
+						<span class="loading loading-spinner loading-sm"></span>
+						Deleting...
+					{:else}
+						Delete trip
+					{/if}
+				</button>
 			</div>
+		</div>
+		<button class="modal-backdrop" onclick={cancelDelete} aria-label="Close"></button>
+	</div>
+{/if}
+
+<!-- Assign Entries Modal -->
+{#if assignTrip}
+	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Assign entries to trip">
+		<div class="modal-box max-w-2xl">
+			<div class="flex justify-between items-center mb-1">
+				<h3 class="font-bold text-lg">Assign entries</h3>
+				<button class="btn btn-ghost btn-sm" onclick={closeAssign} aria-label="Close">✕</button>
+			</div>
+			<p class="text-sm text-base-content/60 mb-3">
+				<span class="font-medium text-base-content">{assignTrip.name}</span>
+				{#if assignLoaded}
+					— {assignedCount} {assignedCount === 1 ? 'entry' : 'entries'} assigned
+				{/if}
+			</p>
 
 			<input
 				type="search"
-				placeholder="Search river, notes, date..."
+				placeholder="Search river, section, notes, date..."
 				bind:value={assignSearch}
-				class="input input-bordered input-sm w-full mb-3 shrink-0"
+				class="input input-bordered input-sm w-full mb-3"
 			/>
 
-			{#if assignLoading}
-				<div class="flex justify-center py-8">
-					<span class="loading loading-spinner loading-md"></span>
+			{#if assignError}
+				<div class="alert alert-error mb-3 py-2">
+					<span class="text-sm">{assignError}</span>
 				</div>
-			{:else if assignError}
-				<div class="alert alert-error mb-3">
-					<span>Error loading entries: {assignError}</span>
+			{/if}
+
+			{#if !assignLoaded}
+				<div class="text-center py-10">
+					<span class="loading loading-spinner loading-md"></span>
 				</div>
 			{:else if filteredAssignEntries.length === 0}
 				<p class="text-center text-base-content/50 py-8">
-					{assignSearch ? 'No matching entries' : 'No entries found'}
+					{assignSearch ? 'No matching entries' : 'No entries yet'}
 				</p>
 			{:else}
-				<div class="overflow-y-auto flex-1 space-y-1 pr-1">
+				<div class="space-y-1 max-h-[26rem] overflow-y-auto pr-1">
 					{#each filteredAssignEntries as entry}
-						{@const assigned = entry.tripId === assigningTrip!.id}
+						{@const inTrip = entry.tripId === assignTrip.id}
+						{@const otherTrip = entry.tripId && entry.tripId !== assignTrip.id}
 						<label
-							class="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors {assigned ? 'bg-primary/10 hover:bg-primary/15' : 'bg-base-200 hover:bg-base-300'}"
+							class="flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors {inTrip ? 'bg-primary/10' : 'hover:bg-base-200'} {otherTrip ? 'opacity-60' : ''}"
 						>
 							<input
 								type="checkbox"
 								class="checkbox checkbox-primary checkbox-sm shrink-0"
-								checked={assigned}
-								onchange={() => entry.id && toggleEntry(entry.id, assigned)}
+								checked={inTrip}
+								onchange={() => toggleEntry(entry)}
+								disabled={!!otherTrip}
+								title={otherTrip ? 'Assigned to another trip' : ''}
 							/>
-							<div class="min-w-0 flex-1">
+							<div class="flex-1 min-w-0">
 								<div class="font-semibold text-sm truncate">
 									{entry.river?.riverName ?? 'Unknown'}
 									{#if entry.river?.section}
@@ -281,7 +373,7 @@
 				</div>
 			{/if}
 
-			<div class="modal-action shrink-0 mt-3">
+			<div class="modal-action">
 				<button class="btn btn-primary" onclick={closeAssign}>Done</button>
 			</div>
 		</div>
