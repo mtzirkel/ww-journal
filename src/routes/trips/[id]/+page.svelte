@@ -4,7 +4,9 @@
 	import { liveQuery } from 'dexie';
 	import { db, seedRivers } from '$lib/db/index.js';
 	import type { Trip, JournalEntry, River } from '$lib/types.js';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { browser } from '$app/environment';
+	import { PUBLIC_MAPTILER_KEY } from '$env/static/public';
 	import { sync, syncStore } from '$lib/sync.svelte.js';
 
 	let trip = $state<Trip | null>(null);
@@ -17,6 +19,148 @@
 	let editDescription = $state('');
 	let picking = $state(false);
 	let pickSearch = $state('');
+
+	// Map state
+	let mapEl = $state<HTMLDivElement | undefined>(undefined);
+	let mapInstance: import('maplibre-gl').Map | null = null;
+	let mapMounted = false; // plain var — not reactive, just a guard
+
+	// Unique geo-located rivers in this trip, with their entry dates
+	let geoRivers = $derived.by(() => {
+		const riverMap = new Map<number, { river: River; entryDates: string[] }>();
+		for (const e of entries) {
+			const r = e.river;
+			if (r?.lat != null && r?.lon != null) {
+				if (!riverMap.has(e.riverId)) {
+					riverMap.set(e.riverId, { river: r, entryDates: [] });
+				}
+				riverMap.get(e.riverId)!.entryDates.push(e.datetime);
+			}
+		}
+		return [...riverMap.values()];
+	});
+
+	// Initialize map when mapEl becomes available (after {#if} renders the container)
+	$effect(() => {
+		if (!mapEl || mapMounted) return;
+		initMap(mapEl);
+	});
+
+	// Update GeoJSON source when entries change after map is mounted
+	$effect(() => {
+		// Reactive on geoRivers — reads it to track changes
+		const data = buildGeoJSON(geoRivers);
+		if (!mapMounted || !mapInstance) return;
+		const source = mapInstance.getSource('trip-rivers') as import('maplibre-gl').GeoJSONSource | undefined;
+		source?.setData(data);
+	});
+
+	function buildGeoJSON(items: { river: River; entryDates: string[] }[]) {
+		return {
+			type: 'FeatureCollection' as const,
+			features: items.map(({ river, entryDates }) => {
+				const sorted = [...entryDates].sort();
+				const fmt = (d: string) =>
+					new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+				const datesStr =
+					sorted.length <= 2
+						? sorted.map(fmt).join(', ')
+						: `${fmt(sorted[0])} – ${fmt(sorted[sorted.length - 1])}`;
+				return {
+					type: 'Feature' as const,
+					geometry: { type: 'Point' as const, coordinates: [river.lon!, river.lat!] },
+					properties: {
+						riverName: river.riverName,
+						section: river.section ?? '',
+						entryCount: entryDates.length,
+						dates: datesStr
+					}
+				};
+			})
+		};
+	}
+
+	async function initMap(el: HTMLDivElement) {
+		if (!browser) return;
+		mapMounted = true; // set immediately to prevent double-init
+
+		const maplibre = await import('maplibre-gl');
+		await import('maplibre-gl/dist/maplibre-gl.css');
+
+		const map = new maplibre.Map({
+			container: el,
+			style: `https://api.maptiler.com/maps/outdoor-v2/style.json?key=${PUBLIC_MAPTILER_KEY}`,
+			center: [-114.0, 46.8],
+			zoom: 5
+		});
+		mapInstance = map;
+
+		map.on('load', () => {
+			const geojson = buildGeoJSON(geoRivers);
+			map.addSource('trip-rivers', { type: 'geojson', data: geojson });
+
+			// Outer halo
+			map.addLayer({
+				id: 'trip-rivers-halo',
+				type: 'circle',
+				source: 'trip-rivers',
+				paint: {
+					'circle-radius': 14,
+					'circle-color': '#238c91',
+					'circle-opacity': 0.25
+				}
+			});
+
+			// Main dot
+			map.addLayer({
+				id: 'trip-rivers-dot',
+				type: 'circle',
+				source: 'trip-rivers',
+				paint: {
+					'circle-radius': 8,
+					'circle-color': '#238c91',
+					'circle-stroke-color': '#fff',
+					'circle-stroke-width': 2,
+					'circle-opacity': 0.9
+				}
+			});
+
+			// Click → popup
+			map.on('click', 'trip-rivers-dot', (e) => {
+				const f = e.features?.[0];
+				if (!f) return;
+				const p = f.properties;
+				const coords = (f.geometry as GeoJSON.Point).coordinates as [number, number];
+				new maplibre.Popup({ offset: 12, maxWidth: '260px' })
+					.setLngLat(coords)
+					.setHTML(`
+						<div style="font-family: inherit; line-height: 1.5; color: #1a1a1a;">
+							<strong style="font-size: 14px; color: #1a1a1a;">${p.riverName}</strong>
+							${p.section ? `<div style="font-size: 12px; color: #555;">${p.section}</div>` : ''}
+							<div style="font-size: 12px; margin-top: 4px; color: #444;">${p.entryCount} day${p.entryCount !== 1 ? 's' : ''}</div>
+							<div style="font-size: 12px; color: #444;">${p.dates}</div>
+						</div>
+					`)
+					.addTo(map);
+			});
+
+			map.on('mouseenter', 'trip-rivers-dot', () => { map.getCanvas().style.cursor = 'pointer'; });
+			map.on('mouseleave', 'trip-rivers-dot', () => { map.getCanvas().style.cursor = ''; });
+
+			// Auto-fit bounds
+			if (geoRivers.length === 1) {
+				map.setCenter([geoRivers[0].river.lon!, geoRivers[0].river.lat!]);
+				map.setZoom(8);
+			} else if (geoRivers.length > 1) {
+				const lons = geoRivers.map((g) => g.river.lon!);
+				const lats = geoRivers.map((g) => g.river.lat!);
+				map.fitBounds(
+					[[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],
+					{ padding: 60, maxZoom: 10, duration: 0 }
+				);
+			}
+		});
+	}
 
 	onMount(() => {
 		let subscription: { unsubscribe: () => void } | undefined;
@@ -53,6 +197,10 @@
 		})();
 
 		return () => { subscription?.unsubscribe(); };
+	});
+
+	onDestroy(() => {
+		mapInstance?.remove();
 	});
 
 	function startEdit() {
@@ -182,6 +330,13 @@
 		</div>
 	</div>
 
+	<!-- Map section — hidden if no geo-located rivers -->
+	{#if loaded && geoRivers.length > 0}
+		<div class="card bg-base-100 shadow overflow-hidden mb-6">
+			<div bind:this={mapEl} class="h-[280px] sm:h-[320px] w-full"></div>
+		</div>
+	{/if}
+
 	<!-- Entries in this trip -->
 	<div class="flex justify-between items-center mb-3">
 		<h2 class="font-bold">Entries</h2>
@@ -194,26 +349,45 @@
 			<p class="text-sm mt-1">Tag entries with this trip from the Log or Edit page.</p>
 		</div>
 	{:else}
-		<div class="space-y-3">
+		<!-- Timeline layout -->
+		<div class="timeline-list relative">
+			<!-- Vertical connecting line -->
+			<div class="timeline-line"></div>
+
 			{#each entries as entry}
-				<div class="card bg-base-100 shadow">
-					<div class="card-body py-4">
-						<div class="flex justify-between items-start">
-							<a href="/entries/{entry.id}" class="flex-1">
-								<h3 class="font-bold">
-									{entry.river?.riverName ?? 'Unknown'}
-									{#if entry.river?.section}
-										<span class="font-normal text-base-content/50"> — {entry.river.section}</span>
+				{@const entryDate = new Date(entry.datetime)}
+				{@const monthStr = entryDate.toLocaleDateString('en-US', { month: 'short' })}
+				{@const dayNum = entryDate.getDate()}
+
+				<div class="timeline-row flex gap-3 sm:gap-4 mb-4 relative items-start">
+					<!-- Date badge -->
+					<div class="timeline-badge shrink-0 flex flex-col items-center justify-center bg-base-100 border border-base-300 rounded-xl shadow-sm w-14 sm:w-16 py-2 z-10">
+						<span class="text-[10px] uppercase tracking-wide text-base-content/50 leading-none">{monthStr}</span>
+						<span class="text-xl font-bold leading-tight">{dayNum}</span>
+					</div>
+
+					<!-- Entry card -->
+					<div class="flex-1 card bg-base-100 shadow">
+						<div class="card-body py-3 px-4">
+							<div class="flex justify-between items-start gap-2">
+								<a href="/entries/{entry.id}" class="flex-1 min-w-0">
+									<h3 class="font-bold text-sm leading-snug">
+										{entry.river?.riverName ?? 'Unknown'}
+										{#if entry.river?.section}
+											<span class="font-normal text-base-content/50"> — {entry.river.section}</span>
+										{/if}
+									</h3>
+									<div class="flex items-center gap-2 mt-1 flex-wrap">
+										<span class="badge badge-sm font-mono">{entry.flow} cfs</span>
+									</div>
+									{#if entry.description}
+										<p class="text-xs text-base-content/60 mt-1 line-clamp-2">{entry.description}</p>
 									{/if}
-								</h3>
-								{#if entry.description}
-									<p class="text-sm text-base-content/60 mt-1 line-clamp-1">{entry.description}</p>
-								{/if}
-							</a>
-							<div class="text-right shrink-0 ml-4">
-								<div class="text-sm text-base-content/50">{new Date(entry.datetime).toLocaleDateString()}</div>
-								<div class="font-mono text-sm">{entry.flow} cfs</div>
-								<button class="btn btn-ghost btn-xs mt-1 text-error" onclick={() => entry.id && removeEntry(entry.id)}>
+								</a>
+								<button
+									class="btn btn-ghost btn-xs text-error shrink-0 mt-0.5"
+									onclick={() => entry.id && removeEntry(entry.id)}
+								>
 									Remove
 								</button>
 							</div>
@@ -277,3 +451,39 @@
 		</div>
 	{/if}
 {/if}
+
+<style>
+	/* Timeline layout */
+	.timeline-list {
+		padding-left: 0;
+	}
+
+	/* Vertical line — positioned to run through the date badge center */
+	.timeline-line {
+		position: absolute;
+		left: 27px; /* center of 56px (w-14) badge */
+		top: 0;
+		bottom: 0;
+		width: 2px;
+		background: oklch(var(--b3, 0.2 0 0));
+		z-index: 0;
+	}
+
+	@media (min-width: 640px) {
+		.timeline-line {
+			left: 31px; /* center of 64px (w-16) badge */
+		}
+	}
+
+	/* Popup styles — dark theme fix */
+	:global(.maplibregl-popup-content) {
+		background: oklch(var(--b1));
+		color: oklch(var(--bc));
+		border-radius: 8px;
+		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+		padding: 12px 14px;
+	}
+	:global(.maplibregl-popup-tip) {
+		border-top-color: oklch(var(--b1));
+	}
+</style>
