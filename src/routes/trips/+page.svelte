@@ -13,6 +13,11 @@
 	let newDescription = $state('');
 	let saving = $state(false);
 
+	// Delete confirmation state
+	let confirmDeleteTrip = $state<(Trip & { entryCount: number }) | null>(null);
+	let deleting = $state(false);
+	let deleteError = $state<string | null>(null);
+
 	onMount(() => {
 		let subscription: { unsubscribe: () => void } | undefined;
 
@@ -61,15 +66,38 @@
 		sync();
 	}
 
-	async function deleteTrip(id: string) {
-		if (!confirm('Delete this trip? Entries will be unlinked, not deleted.')) return;
-		const now = new Date().toISOString();
-		// Unlink entries
-		await db.entries.where('tripId').equals(id).modify({ tripId: null, dirty: true, updatedAt: now });
-		// Soft delete trip
-		await db.trips.update(id, { deletedAt: now, updatedAt: now, dirty: true });
-		await syncStore.refreshPendingCount();
-		sync();
+	function openDeleteConfirm(trip: Trip & { entryCount: number }, e: Event) {
+		e.preventDefault();
+		e.stopPropagation();
+		confirmDeleteTrip = trip;
+		deleteError = null;
+	}
+
+	function cancelDelete() {
+		if (deleting) return;
+		confirmDeleteTrip = null;
+		deleteError = null;
+	}
+
+	async function confirmDelete() {
+		if (!confirmDeleteTrip) return;
+		deleting = true;
+		deleteError = null;
+		try {
+			const id = confirmDeleteTrip.id;
+			const now = new Date().toISOString();
+			// Unlink entries
+			await db.entries.where('tripId').equals(id).modify({ tripId: null, dirty: true, updatedAt: now });
+			// Soft delete trip
+			await db.trips.update(id, { deletedAt: now, updatedAt: now, dirty: true });
+			await syncStore.refreshPendingCount();
+			sync();
+			confirmDeleteTrip = null;
+		} catch (err) {
+			deleteError = err instanceof Error ? err.message : String(err);
+		} finally {
+			deleting = false;
+		}
 	}
 </script>
 
@@ -111,14 +139,24 @@
 			<a href="/trips/{trip.id}" class="card bg-base-100 shadow hover:shadow-md transition-shadow block">
 				<div class="card-body py-4">
 					<div class="flex justify-between items-start">
-						<div>
+						<div class="min-w-0 flex-1">
 							<h3 class="font-bold text-lg">{trip.name}</h3>
 							{#if trip.description}
 								<p class="text-sm text-base-content/60 mt-1 line-clamp-1">{trip.description}</p>
 							{/if}
 						</div>
-						<div class="text-right shrink-0 ml-4">
+						<div class="flex items-center gap-2 shrink-0 ml-4">
 							<div class="badge badge-outline">{trip.entryCount} day{trip.entryCount !== 1 ? 's' : ''}</div>
+							<button
+								class="btn btn-ghost btn-xs text-error"
+								onclick={(e) => openDeleteConfirm(trip, e)}
+								title="Delete trip"
+								aria-label="Delete {trip.name}"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+								</svg>
+							</button>
 						</div>
 					</div>
 					{#if trip.startDate}
@@ -130,5 +168,43 @@
 				</div>
 			</a>
 		{/each}
+	</div>
+{/if}
+
+<!-- Delete Confirmation Modal -->
+{#if confirmDeleteTrip}
+	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Delete trip confirmation">
+		<div class="modal-box">
+			<h3 class="font-bold text-lg mb-2">Delete trip?</h3>
+			<p class="mb-1">
+				Are you sure you want to delete <span class="font-semibold">"{confirmDeleteTrip.name}"</span>?
+			</p>
+			<p class="text-sm text-base-content/60 mb-4">
+				{confirmDeleteTrip.entryCount > 0
+					? `${confirmDeleteTrip.entryCount} linked ${confirmDeleteTrip.entryCount === 1 ? 'entry' : 'entries'} will be unlinked but not deleted. `
+					: ''}This action cannot be undone.
+			</p>
+
+			{#if deleteError}
+				<div class="alert alert-error mb-4">
+					<span>{deleteError}</span>
+				</div>
+			{/if}
+
+			<div class="modal-action">
+				<button class="btn btn-ghost" onclick={cancelDelete} disabled={deleting}>
+					Cancel
+				</button>
+				<button class="btn btn-error" onclick={confirmDelete} disabled={deleting}>
+					{#if deleting}
+						<span class="loading loading-spinner loading-sm"></span>
+						Deleting...
+					{:else}
+						Delete trip
+					{/if}
+				</button>
+			</div>
+		</div>
+		<button class="modal-backdrop" onclick={cancelDelete} aria-label="Close"></button>
 	</div>
 {/if}
