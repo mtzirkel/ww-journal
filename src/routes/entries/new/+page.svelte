@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { db, seedRivers } from '$lib/db/index.js';
 	import { fetchUsgsFlow } from '$lib/api/usgs.js';
 	import RiverAutocomplete from '$lib/components/RiverAutocomplete.svelte';
@@ -18,9 +19,15 @@
 	let fetchingFlow = $state(false);
 	let saving = $state(false);
 
+	// If navigated from a trip page, pre-select that trip
+	let fromTripId = $derived(page.url.searchParams.get('trip'));
+
 	onMount(async () => {
 		await seedRivers();
 		trips = await db.trips.orderBy('name').toArray();
+		if (fromTripId) {
+			tripId = fromTripId;
+		}
 	});
 
 	async function fetchFlow() {
@@ -76,7 +83,8 @@
 			} catch {
 				// swallow — entry is dirty locally, next sync will retry
 			}
-			goto('/entries');
+			// If launched from a trip page, go back to it
+			goto(fromTripId ? `/trips/${fromTripId}` : '/entries');
 		} catch (err) {
 			console.error('[save] failed:', err);
 			saveError = err instanceof Error ? err.message : String(err);

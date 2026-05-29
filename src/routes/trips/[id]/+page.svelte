@@ -366,7 +366,10 @@
 	<!-- Entries in this trip -->
 	<div class="flex justify-between items-center mb-3">
 		<h2 class="font-bold">Entries</h2>
-		<button class="btn btn-sm btn-primary" onclick={() => { picking = true; pickSearch = ''; }}>+ Add entries</button>
+		<div class="flex gap-2">
+			<a href="/entries/new?trip={trip.id}" class="btn btn-sm btn-outline">+ New entry</a>
+			<button class="btn btn-sm btn-primary" onclick={() => { picking = true; pickSearch = ''; }}>+ Add existing</button>
+		</div>
 	</div>
 
 	{#if loaded && entries.length === 0}
