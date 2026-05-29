@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { db, seedTagCategories } from '$lib/db/index.js';
 	import type { EntryTag, TagCategory } from '$lib/types.js';
+	import Fuse from 'fuse.js';
 	import { onMount } from 'svelte';
 
 	let {
@@ -11,44 +12,86 @@
 
 	let categories = $state<TagCategory[]>([]);
 	let expanded = $state(false);
-	let newCategory = $state('');
-	let newValue = $state('');
 	let selectedCategory = $state('');
+	let query = $state('');
+	let inputEl: HTMLInputElement | undefined = $state();
 
 	onMount(async () => {
 		await seedTagCategories();
 		categories = await db.tagCategories.toArray();
+		// Auto-select if only one category
+		if (categories.length === 1) selectedCategory = categories[0].name;
 	});
 
-	function addTag() {
-		if (!selectedCategory || !newValue.trim()) return;
-		const tag: EntryTag = { category: selectedCategory, value: newValue.trim() };
+	// Build a fuse index for the active category's known values
+	let fuse = $derived.by(() => {
+		const cat = categories.find(c => c.name === selectedCategory);
+		if (!cat || cat.values.length === 0) return null;
+		return new Fuse(cat.values, { threshold: 0.4, minMatchCharLength: 1 });
+	});
+
+	// Suggestions: all known values when query is empty, fuzzy-filtered when typing
+	// Excludes values already applied to this entry
+	let suggestions = $derived.by(() => {
+		const cat = categories.find(c => c.name === selectedCategory);
+		if (!cat) return [] as string[];
+
+		const already = new Set(
+			value.filter(t => t.category === selectedCategory).map(t => t.value)
+		);
+
+		let pool: string[];
+		if (query.trim().length === 0) {
+			pool = cat.values;
+		} else if (fuse) {
+			pool = fuse.search(query, { limit: 8 }).map(r => r.item);
+		} else {
+			pool = [];
+		}
+
+		return pool.filter(v => !already.has(v));
+	});
+
+	function addTag(val: string) {
+		const v = val.trim();
+		if (!selectedCategory || !v) return;
+
+		const tag: EntryTag = { category: selectedCategory, value: v };
 		if (!value.some(t => t.category === tag.category && t.value === tag.value)) {
 			value = [...value, tag];
 
-			// Remember this value for autocomplete
+			// Remember this value for future autocomplete
 			const cat = categories.find(c => c.name === selectedCategory);
 			if (cat && !cat.values.includes(tag.value)) {
 				cat.values = [...cat.values, tag.value];
 				db.tagCategories.update(cat.id, { values: cat.values, updatedAt: new Date().toISOString(), dirty: true });
 			}
 		}
-		newValue = '';
+		query = '';
+		inputEl?.focus();
 	}
 
 	function removeTag(index: number) {
 		value = value.filter((_, i) => i !== index);
 	}
 
+	function selectCategory(name: string) {
+		selectedCategory = selectedCategory === name ? '' : name;
+		query = '';
+		// Focus input after tick
+		setTimeout(() => inputEl?.focus(), 50);
+	}
+
 	async function addCategory() {
-		if (!newCategory.trim()) return;
-		const existing = categories.find(c => c.name.toLowerCase() === newCategory.trim().toLowerCase());
-		if (existing) return;
+		const name = query.trim();
+		if (!name) return;
+		const existing = categories.find(c => c.name.toLowerCase() === name.toLowerCase());
+		if (existing) { selectedCategory = existing.name; query = ''; return; }
 
 		const now = new Date().toISOString();
 		await db.tagCategories.add({
 			id: crypto.randomUUID(),
-			name: newCategory.trim(),
+			name,
 			icon: '🏷',
 			values: [],
 			createdAt: now,
@@ -57,23 +100,19 @@
 			dirty: true
 		});
 		categories = await db.tagCategories.toArray();
-		selectedCategory = newCategory.trim();
-		newCategory = '';
+		selectedCategory = name;
+		query = '';
 	}
 
-	let suggestions = $derived(() => {
-		if (!selectedCategory || newValue.length < 1) return [];
-		const cat = categories.find(c => c.name === selectedCategory);
-		if (!cat) return [];
-		const lower = newValue.toLowerCase();
-		return cat.values.filter(v =>
-			v.toLowerCase().includes(lower) &&
-			!value.some(t => t.category === selectedCategory && t.value === v)
-		).slice(0, 5);
-	});
+	// Is the typed query a genuinely new value (not in suggestions)?
+	let isNew = $derived(
+		query.trim().length > 0 &&
+		!suggestions.some(s => s.toLowerCase() === query.trim().toLowerCase())
+	);
 </script>
 
 <div class="form-control">
+	<!-- Header row: toggle + current tags -->
 	<button
 		type="button"
 		class="btn btn-sm btn-ghost justify-start gap-2"
@@ -83,7 +122,6 @@
 		Tags ({value.length})
 	</button>
 
-	<!-- Show existing tags -->
 	{#if value.length > 0}
 		<div class="flex flex-wrap gap-1 mt-1 ml-2">
 			{#each value as tag, i}
@@ -97,43 +135,85 @@
 
 	{#if expanded}
 		<div class="bg-base-200 rounded-lg p-3 mt-2 space-y-3">
-			<div class="flex gap-2">
-				<select class="select select-bordered select-sm flex-1" bind:value={selectedCategory}>
-					<option value="">Category...</option>
-					{#each categories as cat}
-						<option value={cat.name}>{cat.icon} {cat.name}</option>
-					{/each}
-				</select>
-				<div class="relative flex-1">
-					<input
-						type="text"
-						class="input input-bordered input-sm w-full"
-						placeholder="Value..."
-						bind:value={newValue}
-						onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
-					/>
-					{#if suggestions().length > 0}
-						<ul class="absolute z-50 top-full left-0 right-0 mt-1 bg-base-100 border border-base-300 rounded shadow-lg">
-							{#each suggestions() as sug}
-								<li>
-									<button type="button" class="w-full text-left px-3 py-1 text-sm hover:bg-base-200"
-										onmousedown={() => { newValue = sug; addTag(); }}>
-										{sug}
-									</button>
-								</li>
-							{/each}
-						</ul>
-					{/if}
-				</div>
-				<button type="button" class="btn btn-sm btn-primary" onclick={addTag} disabled={!selectedCategory || !newValue.trim()}>+</button>
+
+			<!-- Category selector tabs -->
+			<div class="flex flex-wrap gap-1">
+				{#each categories as cat}
+					<button
+						type="button"
+						class="btn btn-xs"
+						class:btn-primary={selectedCategory === cat.name}
+						class:btn-ghost={selectedCategory !== cat.name}
+						onclick={() => selectCategory(cat.name)}
+					>
+						{cat.icon} {cat.name}
+					</button>
+				{/each}
 			</div>
 
+			{#if selectedCategory}
+				<!-- Value input + suggestions -->
+				<div class="space-y-2">
+					<div class="flex gap-2">
+						<input
+							bind:this={inputEl}
+							type="text"
+							class="input input-bordered input-sm flex-1"
+							placeholder="Type to search or add new…"
+							bind:value={query}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') {
+									e.preventDefault();
+									if (query.trim()) addTag(query);
+								}
+							}}
+						/>
+						{#if isNew}
+							<button
+								type="button"
+								class="btn btn-sm btn-primary"
+								onclick={() => addTag(query)}
+							>+</button>
+						{/if}
+					</div>
+
+					<!-- Suggestion chips — all past values when no query, fuzzy-filtered when typing -->
+					{#if suggestions.length > 0}
+						<div class="flex flex-wrap gap-1">
+							{#each suggestions as sug}
+								<button
+									type="button"
+									class="badge badge-outline cursor-pointer hover:badge-primary transition-colors"
+									onmousedown={(e) => { e.preventDefault(); addTag(sug); }}
+								>
+									{sug}
+								</button>
+							{/each}
+						</div>
+					{:else if query.trim().length > 0}
+						<p class="text-xs text-base-content/40">No matches — press Enter or + to add "{query.trim()}"</p>
+					{/if}
+				</div>
+			{:else}
+				<p class="text-xs text-base-content/40">Select a category above, or —</p>
+			{/if}
+
 			<!-- Add new category -->
-			<div class="flex gap-2 items-center">
-				<input type="text" class="input input-bordered input-xs flex-1" placeholder="New category..." bind:value={newCategory}
-					onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCategory(); } }} />
-				<button type="button" class="btn btn-xs btn-ghost" onclick={addCategory} disabled={!newCategory.trim()}>Add category</button>
-			</div>
+			{#if !selectedCategory}
+				<div class="flex gap-2 items-center">
+					<input
+						type="text"
+						class="input input-bordered input-xs flex-1"
+						placeholder="New category name…"
+						bind:value={query}
+						onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCategory(); } }}
+					/>
+					<button type="button" class="btn btn-xs btn-ghost" onclick={addCategory} disabled={!query.trim()}>
+						Add category
+					</button>
+				</div>
+			{/if}
+
 		</div>
 	{/if}
 </div>
