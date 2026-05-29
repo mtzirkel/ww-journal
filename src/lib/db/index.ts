@@ -174,15 +174,13 @@ export async function seedTagCategories() {
 }
 
 export async function seedRivers() {
-	const count = await db.rivers.count();
-	if (count > 0) return;
-
 	const response = await fetch('/data/rivers.json');
 	const rivers: River[] = await response.json();
 	const now = new Date().toISOString();
+	// bulkPut upserts by id — safe to run every time, updates altNames/gauges without touching user data
 	const seeded = rivers.map((r) => ({ ...r, createdAt: now, updatedAt: now, deletedAt: null, dirty: false }));
 	await db.rivers.bulkPut(seeded);
-	console.log(`Seeded ${rivers.length} rivers`);
+	console.log(`Seeded/refreshed ${rivers.length} rivers`);
 }
 
 export async function getLastSyncedAt(): Promise<string | null> {
