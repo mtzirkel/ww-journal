@@ -2,6 +2,8 @@
 	import { db } from '$lib/db/index.js';
 	import type { River } from '$lib/types.js';
 	import AddRiverModal from './AddRiverModal.svelte';
+	import Fuse from 'fuse.js';
+	import { onMount } from 'svelte';
 
 	let {
 		value = $bindable<River | null>(null),
@@ -18,18 +20,29 @@
 	let showAddModal = $state(false);
 	let inputEl: HTMLInputElement;
 
-	async function search(q: string) {
-		if (q.length < 2) {
+	let fuse: Fuse<River> | null = null;
+
+	onMount(async () => {
+		const all = await db.rivers.toArray();
+		fuse = new Fuse(all, {
+			keys: [
+				{ name: 'riverName', weight: 2 },
+				{ name: 'section', weight: 1 },
+				{ name: 'state', weight: 0.5 }
+			],
+			threshold: 0.4,      // 0 = exact, 1 = match anything — 0.4 is forgiving but not noisy
+			distance: 200,       // allow matches anywhere in the string
+			minMatchCharLength: 2,
+			includeScore: true
+		});
+	});
+
+	function search(q: string) {
+		if (!fuse || q.length < 2) {
 			results = [];
 			return;
 		}
-		const lower = q.toLowerCase();
-		results = await db.rivers
-			.filter((r) => r.riverName.toLowerCase().includes(lower) ||
-				(r.section?.toLowerCase().includes(lower) ?? false) ||
-				(r.altName?.toLowerCase().includes(lower) ?? false))
-			.limit(10)
-			.toArray();
+		results = fuse.search(q, { limit: 10 }).map(r => r.item);
 	}
 
 	function select(river: River) {
