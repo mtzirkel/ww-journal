@@ -74,6 +74,59 @@ export async function sync(): Promise<void> {
 	return syncInFlight;
 }
 
+/**
+ * Push everything local, verify nothing is still pending, then clear the local
+ * tables and re-pull from the server.
+ *
+ * Used after a schema change: rather than transforming every record on the
+ * device, the server (already migrated, and canonical) becomes the source of
+ * truth again. Deliberately refuses to clear anything unless the push fully
+ * landed — losing an unsynced entry is worse than leaving the app on the old
+ * shape until the user is online.
+ */
+export async function rebuildLocalData(): Promise<void> {
+	if (typeof navigator !== 'undefined' && !navigator.onLine) {
+		throw new Error('You are offline. Rebuilding needs the server — try again when connected.');
+	}
+
+	// Read through a call so TS does not narrow the store across statements —
+	// sync() mutates it, which the type system cannot see.
+	const stateNow = (): SyncState => syncStore.state;
+
+	// 1. Push local work up first.
+	await sync();
+	if (stateNow() === 'error') {
+		throw new Error(`Sync failed, nothing was cleared: ${syncStore.lastError}`);
+	}
+
+	// 2. Refuse to continue if anything is still unsynced.
+	await syncStore.refreshPendingCount();
+	if (syncStore.pendingCount > 0) {
+		throw new Error(
+			`${syncStore.pendingCount} change(s) still unsynced — refusing to clear local data.`
+		);
+	}
+
+	// 3. Safe to clear. Rivers are left alone; they re-seed from static data.
+	await db.transaction(
+		'rw',
+		[db.entries, db.trips, db.tagCategories, db.syncSettings],
+		async () => {
+			await db.entries.clear();
+			await db.trips.clear();
+			await db.tagCategories.clear();
+			await db.syncSettings.delete('lastSyncedAt');
+		}
+	);
+	syncStore.lastSyncedAt = null;
+
+	// 4. No lastSyncedAt means the next pull asks for everything.
+	await sync();
+	if (stateNow() === 'error') {
+		throw new Error(`Rebuild pull failed — reload to retry: ${syncStore.lastError}`);
+	}
+}
+
 async function pullChanges() {
 	const since = await getLastSyncedAt();
 	const url = since ? `/api/sync/pull?since=${encodeURIComponent(since)}` : '/api/sync/pull';

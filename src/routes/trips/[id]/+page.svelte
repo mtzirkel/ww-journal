@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { liveQuery } from 'dexie';
 	import { db, seedRivers } from '$lib/db/index.js';
+	import { riverIdOf, flowOf, riverIds, lookupRiver } from '$lib/activity.js';
 	import type { Trip, JournalEntry, River } from '$lib/types.js';
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
@@ -32,10 +33,12 @@
 		for (const e of entries) {
 			const r = e.river;
 			if (r?.lat != null && r?.lon != null) {
-				if (!riverMap.has(e.riverId)) {
-					riverMap.set(e.riverId, { river: r, entryDates: [] });
+				const rid = riverIdOf(e);
+				if (rid === null) continue;
+				if (!riverMap.has(rid)) {
+					riverMap.set(rid, { river: r, entryDates: [] });
 				}
-				riverMap.get(e.riverId)!.entryDates.push(e.datetime);
+				riverMap.get(rid)!.entryDates.push(e.datetime);
 			}
 		}
 		return [...riverMap.values()];
@@ -185,7 +188,7 @@
 			});
 
 			subscription = observable.subscribe((value) => {
-				entries = value.inTrip.map((e) => ({ ...e, river: rivers.get(e.riverId) }));
+				entries = value.inTrip.map((e) => ({ ...e, river: lookupRiver(rivers, e) }));
 				allEntries = value.all;
 				loaded = true;
 
@@ -212,7 +215,7 @@
 
 	function scrollToRiver(riverId: number) {
 		// Find the first entry in the timeline for this river
-		const firstEntry = entries.find(e => e.riverId === riverId);
+		const firstEntry = entries.find(e => riverIdOf(e) === riverId);
 		if (!firstEntry?.id) return;
 
 		// Scroll the entry into view
@@ -282,7 +285,7 @@
 		const q = pickSearch.trim().toLowerCase();
 		return allEntries
 			.filter((e) => e.tripId !== trip!.id)
-			.map((e) => ({ ...e, river: rivers.get(e.riverId) }))
+			.map((e) => ({ ...e, river: lookupRiver(rivers, e) }))
 			.filter((e) => {
 				if (!q) return true;
 				if (e.river?.riverName?.toLowerCase().includes(q)) return true;
@@ -295,7 +298,7 @@
 
 	// Stats
 	let totalDays = $derived(entries.length);
-	let uniqueRivers = $derived(new Set(entries.map(e => e.riverId)).size);
+	let uniqueRivers = $derived(new Set(entries.map(e => riverIdOf(e))).size);
 	let dateRange = $derived(() => {
 		if (entries.length === 0) return '';
 		const dates = entries.map(e => e.datetime).sort();
@@ -391,10 +394,10 @@
 				<div
 					id="entry-row-{entry.id}"
 					class="timeline-row flex gap-3 sm:gap-4 mb-4 relative items-start transition-all duration-500"
-					class:ring-2={highlightedRiverId === entry.riverId}
-					class:ring-primary={highlightedRiverId === entry.riverId}
-					class:ring-offset-2={highlightedRiverId === entry.riverId}
-					class:rounded-xl={highlightedRiverId === entry.riverId}
+					class:ring-2={highlightedRiverId === riverIdOf(entry)}
+					class:ring-primary={highlightedRiverId === riverIdOf(entry)}
+					class:ring-offset-2={highlightedRiverId === riverIdOf(entry)}
+					class:rounded-xl={highlightedRiverId === riverIdOf(entry)}
 				>
 					<!-- Date badge -->
 					<div class="timeline-badge shrink-0 flex flex-col items-center justify-center bg-base-100 border border-base-300 rounded-xl shadow-sm w-14 sm:w-16 py-2 z-10">
@@ -414,7 +417,7 @@
 										{/if}
 									</h3>
 									<div class="flex items-center gap-2 mt-1 flex-wrap">
-										<span class="badge badge-sm font-mono">{entry.flow} cfs</span>
+										<span class="badge badge-sm font-mono">{flowOf(entry)} cfs</span>
 									</div>
 									{#if entry.description}
 										<p class="text-xs text-base-content/60 mt-1 line-clamp-2">{entry.description}</p>
@@ -471,7 +474,7 @@
 										</div>
 										<div class="text-right text-xs shrink-0">
 											<div class="text-base-content/50">{new Date(entry.datetime).toLocaleDateString()}</div>
-											<div class="font-mono">{entry.flow} cfs</div>
+											<div class="font-mono">{flowOf(entry)} cfs</div>
 										</div>
 									</div>
 								</div>

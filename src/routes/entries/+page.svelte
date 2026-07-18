@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { liveQuery } from 'dexie';
 	import { db, seedRivers } from '$lib/db/index.js';
+	import { riverIdOf, flowOf, riverIds, lookupRiver } from '$lib/activity.js';
 	import type { River, JournalEntry, Trip } from '$lib/types.js';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -37,7 +38,7 @@
 					.filter((e) => !e.deletedAt)
 					.map((e) => ({
 						...e,
-						river: rivers.get(e.riverId),
+						river: lookupRiver(rivers, e),
 						trip: e.tripId ? trips.get(e.tripId) : undefined
 					}));
 			});
@@ -55,7 +56,7 @@
 
 	let filteredEntries = $derived.by(() => {
 		let result = entries;
-		if (filterRiverId) result = result.filter((e) => e.riverId === filterRiverId);
+		if (filterRiverId) result = result.filter((e) => riverIdOf(e) === filterRiverId);
 		if (filterYear) result = result.filter((e) => e.datetime.startsWith(filterYear!));
 		if (filterMonth) result = result.filter((e) => e.datetime.startsWith(filterMonth!));
 		const q = search.trim().toLowerCase();
@@ -85,17 +86,17 @@
 	});
 
 	let riverSummary = $derived(
-		[...new Set(entries.map((e) => e.riverId))]
+		[...new Set(riverIds(entries))]
 			.map((id) => ({
 				river: rivers.get(id),
-				count: entries.filter((e) => e.riverId === id).length
+				count: entries.filter((e) => riverIdOf(e) === id).length
 			}))
 			.filter((r) => r.river)
 			.sort((a, b) => b.count - a.count)
 	);
 
 	let uniqueRivers = $derived(
-		[...new Set(entries.map((e) => e.riverId))]
+		[...new Set(riverIds(entries))]
 			.map((id) => rivers.get(id))
 			.filter(Boolean)
 			.sort((a, b) => a!.riverName.localeCompare(b!.riverName))
@@ -135,7 +136,7 @@
 				{#each uniqueRivers as river}
 					<option value={river?.id} selected={river?.id === filterRiverId}>
 						{river?.riverName}{river?.section ? ` — ${river.section}` : ''} ({entries.filter(
-							(e) => e.riverId === river?.id
+							(e) => riverIdOf(e) === river?.id
 						).length})
 					</option>
 				{/each}
@@ -228,8 +229,8 @@
 							<div class="text-base-content/50">
 								{new Date(entry.datetime).toLocaleDateString()}
 							</div>
-							{#if entry.flow}
-								<div class="font-mono">{entry.flow} cfs</div>
+							{#if flowOf(entry)}
+								<div class="font-mono">{flowOf(entry)} cfs</div>
 							{/if}
 						</div>
 					</div>

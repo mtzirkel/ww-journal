@@ -162,7 +162,16 @@ export async function getRiverEntriesForUser(
 			trip_id: string | null;
 			date: Date | string;
 			datetime: Date | null;
-			flow: string | number;
+			flow: string | number | null;
+			activity_type: string;
+			title: string | null;
+			place: string | null;
+			lat: string | number | null;
+			lon: string | number | null;
+			distance: string | number | null;
+			duration_seconds: number | null;
+			elevation_gain: string | number | null;
+			details: Record<string, unknown> | null;
 			description: string;
 			tags: Array<{ category: string; value: string }>;
 			created_at: Date;
@@ -170,8 +179,9 @@ export async function getRiverEntriesForUser(
 			deleted_at: Date | null;
 		}>
 	>`
-		SELECT id, river_id, trip_id, date, datetime, flow, description, tags,
-		       created_at, updated_at, deleted_at
+		SELECT id, river_id, trip_id, date, datetime, flow, activity_type, title,
+		       place, lat, lon, distance, duration_seconds, elevation_gain, details,
+		       description, tags, created_at, updated_at, deleted_at
 		FROM entries
 		WHERE user_id = ${userId}
 		  AND river_id = ${riverId}
@@ -182,9 +192,15 @@ export async function getRiverEntriesForUser(
 	return rows.map((r) => {
 		const dateStr =
 			typeof r.date === 'string' ? r.date : (r.date as Date).toISOString().slice(0, 10);
+		const details: { riverId?: number; flow?: number; [key: string]: unknown } = {
+			...(r.details ?? {})
+		};
+		if (r.river_id !== null && r.river_id !== undefined) details.riverId = r.river_id;
+		if (r.flow !== null && r.flow !== undefined) details.flow = Number(r.flow);
+
 		return {
 			id: r.id,
-			riverId: r.river_id,
+			activityType: r.activity_type ?? 'paddle',
 			tripId: r.trip_id,
 			date: dateStr,
 			datetime: r.datetime
@@ -192,7 +208,17 @@ export async function getRiverEntriesForUser(
 					? r.datetime.toISOString()
 					: (r.datetime as string)
 				: dateStr + 'T12:00:00.000Z',
-			flow: Number(r.flow),
+			title: r.title ?? null,
+			place: r.place ?? null,
+			lat: r.lat === null || r.lat === undefined ? null : Number(r.lat),
+			lon: r.lon === null || r.lon === undefined ? null : Number(r.lon),
+			distance: r.distance === null || r.distance === undefined ? null : Number(r.distance),
+			durationSeconds: r.duration_seconds ?? null,
+			elevationGain:
+				r.elevation_gain === null || r.elevation_gain === undefined
+					? null
+					: Number(r.elevation_gain),
+			details,
 			description: r.description,
 			tags: r.tags ?? [],
 			createdAt: (r.created_at as Date).toISOString(),

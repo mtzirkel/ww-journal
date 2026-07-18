@@ -1,6 +1,24 @@
 <script lang="ts">
-	import { sync, syncStore } from '$lib/sync.svelte.js';
+	import { sync, syncStore, rebuildLocalData } from '$lib/sync.svelte.js';
 	import { onMount } from 'svelte';
+
+	let rebuilding = $state(false);
+	let rebuildError = $state<string | null>(null);
+	let rebuildDone = $state(false);
+
+	async function doRebuild() {
+		rebuilding = true;
+		rebuildError = null;
+		rebuildDone = false;
+		try {
+			await rebuildLocalData();
+			rebuildDone = true;
+		} catch (err) {
+			rebuildError = err instanceof Error ? err.message : String(err);
+		} finally {
+			rebuilding = false;
+		}
+	}
 
 	let { data } = $props();
 	let persistGranted = $state<boolean | null>(null);
@@ -106,7 +124,36 @@
 <div class="card bg-base-100 shadow mb-4">
 	<div class="card-body">
 		<h2 class="card-title">Data</h2>
-		<p class="text-base-content/50 text-sm">Export/import coming in Phase 6</p>
+
+		<p class="text-base-content/70 text-sm">
+			Rebuild this device's copy from the server. Everything local is synced up first,
+			and nothing is cleared unless that succeeds.
+		</p>
+
+		{#if rebuildError}
+			<div class="alert alert-error mt-2">
+				<span>{rebuildError}</span>
+			</div>
+		{/if}
+		{#if rebuildDone}
+			<div class="alert alert-success mt-2">
+				<span>Local data rebuilt from the server.</span>
+			</div>
+		{/if}
+
+		<button
+			class="btn btn-outline btn-sm mt-3 w-fit"
+			disabled={rebuilding || syncStore.state === 'syncing'}
+			onclick={doRebuild}
+		>
+			{#if rebuilding}
+				<span class="loading loading-spinner loading-xs"></span> Rebuilding...
+			{:else}
+				Sync &amp; rebuild local data
+			{/if}
+		</button>
+
+		<p class="text-base-content/50 text-sm mt-4">Export/import coming in Phase 6</p>
 	</div>
 </div>
 

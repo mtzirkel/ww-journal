@@ -5,11 +5,14 @@
 	import { fetchUsgsFlow } from '$lib/api/usgs.js';
 	import RiverAutocomplete from '$lib/components/RiverAutocomplete.svelte';
 	import TagInput from '$lib/components/TagInput.svelte';
-	import type { River, JournalEntry, Trip, EntryTag } from '$lib/types.js';
+	import type { River, JournalEntry, Trip, EntryTag, ActivityType } from '$lib/types.js';
+	import { ACTIVITIES, isRiverBased } from '$lib/activity.js';
 	import { sync, syncStore } from '$lib/sync.svelte.js';
 	import { onMount } from 'svelte';
 
+	let activityType = $state<ActivityType>('paddle');
 	let selectedRiver = $state<River | null>(null);
+	let place = $state('');
 	let date = $state(new Date().toISOString().slice(0, 10)); // just the date, time assigned on save
 	let flow = $state<number | null>(null);
 	let description = $state('');
@@ -48,7 +51,9 @@
 	let saveError = $state<string | null>(null);
 
 	async function save() {
-		if (!selectedRiver || !date) return;
+		if (!date) return;
+		// A river is only required for river-based activities.
+		if (isRiverBased(activityType) && !selectedRiver) return;
 		saving = true;
 		saveError = null;
 
@@ -65,11 +70,20 @@
 			const entry: JournalEntry = {
 				id: crypto.randomUUID(),
 				datetime,
-				riverId: selectedRiver.id,
-				flow: flow ?? 0,
+				activityType,
+				title: null,
 				description,
 				tripId,
 				tags: $state.snapshot(tags) as EntryTag[],
+				place: place.trim() || null,
+				lat: null,
+				lon: null,
+				distance: null,
+				durationSeconds: null,
+				elevationGain: null,
+				details: isRiverBased(activityType) && selectedRiver
+					? { riverId: selectedRiver.id, flow: flow ?? null }
+					: {},
 				createdAt: now,
 				updatedAt: now,
 				deletedAt: null,
@@ -100,33 +114,66 @@
 	);
 </script>
 
-<h1 class="text-3xl font-bold mb-6">Log a River Day</h1>
+<h1 class="text-3xl font-bold mb-6">Log a Day</h1>
 
 <div class="card bg-base-100 shadow">
 	<div class="card-body">
 		<div class="form-control mb-4">
-			<label class="label" for="river">
-				<span class="label-text">River</span>
-			</label>
-			<RiverAutocomplete bind:value={selectedRiver} />
-			{#if selectedRiver}
-				<label class="label">
-					<span class="label-text-alt text-base-content/50">
-						{selectedRiver.state}
-						{#if selectedRiver.classRating}· Class {selectedRiver.classRating}{/if}
-						{#if selectedRiver.externalGaugeId}· Has gauge ({selectedRiver.externalGaugeSource}){/if}
-					</span>
-				</label>
-			{/if}
+			<span class="label-text mb-2 block">Activity</span>
+			<div class="flex flex-wrap gap-2">
+				{#each ACTIVITIES as activity (activity.type)}
+					<button
+						type="button"
+						class="btn btn-sm {activityType === activity.type ? 'btn-primary' : 'btn-outline'}"
+						aria-pressed={activityType === activity.type}
+						onclick={() => (activityType = activity.type)}
+					>
+						{activity.icon}
+						{activity.label}
+					</button>
+				{/each}
+			</div>
 		</div>
 
-		<div class="grid grid-cols-2 gap-4 mb-4">
+		{#if isRiverBased(activityType)}
+			<div class="form-control mb-4">
+				<label class="label" for="river">
+					<span class="label-text">River</span>
+				</label>
+				<RiverAutocomplete bind:value={selectedRiver} />
+				{#if selectedRiver}
+					<label class="label">
+						<span class="label-text-alt text-base-content/50">
+							{selectedRiver.state}
+							{#if selectedRiver.classRating}· Class {selectedRiver.classRating}{/if}
+							{#if selectedRiver.externalGaugeId}· Has gauge ({selectedRiver.externalGaugeSource}){/if}
+						</span>
+					</label>
+				{/if}
+			</div>
+		{:else}
+			<div class="form-control mb-4">
+				<label class="label" for="place">
+					<span class="label-text">Place</span>
+				</label>
+				<input
+					type="text"
+					id="place"
+					class="input input-bordered"
+					placeholder="Trail, route, or location"
+					bind:value={place}
+				/>
+			</div>
+		{/if}
+
+		<div class="grid {isRiverBased(activityType) ? 'grid-cols-2' : 'grid-cols-1'} gap-4 mb-4">
 			<div class="form-control">
 				<label class="label" for="date">
 						<span class="label-text">Date</span>
 					</label>
 					<input type="date" id="date" class="input input-bordered" bind:value={date} />
 			</div>
+			{#if isRiverBased(activityType)}
 			<div class="form-control">
 				<label class="label" for="flow">
 					<span class="label-text">Flow (CFS)</span>
@@ -157,6 +204,7 @@
 					</label>
 				{/if}
 			</div>
+			{/if}
 		</div>
 
 		<div class="form-control mb-4 w-full">
@@ -198,7 +246,7 @@
 
 		<button
 			class="btn btn-primary w-full"
-			disabled={!selectedRiver || !date || saving}
+			disabled={(isRiverBased(activityType) && !selectedRiver) || !date || saving}
 			onclick={save}
 		>
 			{saving ? 'Saving...' : 'Save Entry'}

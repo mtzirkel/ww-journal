@@ -98,8 +98,8 @@
 									day: 'numeric'
 								})}
 							</div>
-							{#if entry.flow}
-								<div class="text-sm text-base-content/60">{entry.flow.toLocaleString()} CFS</div>
+							{#if entry.details?.flow}
+								<div class="text-sm text-base-content/60">{entry.details.flow.toLocaleString()} CFS</div>
 							{/if}
 						</div>
 						{#if entry.description}

@@ -65,3 +65,28 @@ export function gaugeHeightOf(entry: JournalEntry): number | null {
 export function hasRiver(entry: JournalEntry): boolean {
 	return riverIdOf(entry) !== null;
 }
+
+/**
+ * River ids across a set of entries, skipping activities that have no river.
+ * Use for counts and grouping so a hunt or bike day never lands in river stats.
+ */
+export function riverIds(entries: JournalEntry[]): number[] {
+	return entries.map(riverIdOf).filter((id): id is number => id !== null);
+}
+
+/** Look up an entry's river in a map, or undefined for non-river activities. */
+export function lookupRiver<T>(rivers: Map<number, T>, entry: JournalEntry): T | undefined {
+	const rid = riverIdOf(entry);
+	return rid === null ? undefined : rivers.get(rid);
+}
+
+/** Recorded flows across a set of entries, skipping entries without one. */
+export function flows(entries: JournalEntry[]): number[] {
+	return entries.map(flowOf).filter((f): f is number => f !== null);
+}
+
+/** Mean of an array, or null when empty — avoids NaN in the UI. */
+export function mean(values: number[]): number | null {
+	if (values.length === 0) return null;
+	return values.reduce((sum, v) => sum + v, 0) / values.length;
+}

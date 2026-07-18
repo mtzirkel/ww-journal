@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { db, seedRivers } from '$lib/db/index.js';
+	import { riverIdOf, flowOf } from '$lib/activity.js';
 	import { fetchUsgsFlow } from '$lib/api/usgs.js';
 	import RiverAutocomplete from '$lib/components/RiverAutocomplete.svelte';
 	import type { River, JournalEntry, Trip } from '$lib/types.js';
@@ -28,7 +29,8 @@
 		const id = page.params.id ?? '';
 		entry = await db.entries.get(id) ?? null;
 		if (entry) {
-			river = await db.rivers.get(entry.riverId) ?? null;
+			const rid = riverIdOf(entry);
+			river = rid === null ? null : (await db.rivers.get(rid)) ?? null;
 			trip = entry.tripId ? (await db.trips.get(entry.tripId)) ?? null : null;
 		}
 		trips = (await db.trips.toArray()).filter((t) => !t.deletedAt).sort((a, b) => a.name.localeCompare(b.name));
@@ -38,7 +40,7 @@
 		if (!entry) return;
 		editRiver = river;
 		editDatetime = new Date(entry.datetime).toISOString().slice(0, 16);
-		editFlow = entry.flow;
+		editFlow = flowOf(entry);
 		editDescription = entry.description;
 		editTripId = entry.tripId ?? null;
 		editing = true;
@@ -48,9 +50,8 @@
 		if (!entry?.id || !editRiver) return;
 		saving = true;
 		await db.entries.update(entry.id, {
-			riverId: editRiver.id,
+			details: { riverId: editRiver.id, flow: editFlow ?? null },
 			datetime: new Date(editDatetime).toISOString(),
-			flow: editFlow ?? 0,
 			description: editDescription,
 			tripId: editTripId,
 			updatedAt: new Date().toISOString(),
@@ -173,7 +174,7 @@
 				</div>
 				<div>
 					<p class="text-sm text-base-content/50">Flow</p>
-					<p class="font-mono text-lg">{entry.flow} <span class="text-sm text-base-content/50">CFS</span></p>
+					<p class="font-mono text-lg">{flowOf(entry)} <span class="text-sm text-base-content/50">CFS</span></p>
 				</div>
 			</div>
 

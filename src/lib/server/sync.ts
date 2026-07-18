@@ -37,7 +37,7 @@ export interface SyncEntry {
 	durationSeconds: number | null;
 	elevationGain: number | null;
 	/** Sport-specific payload. Paddle/fish carry riverId + flow here. */
-	details: Record<string, unknown>;
+	details: { riverId?: number; flow?: number; [key: string]: unknown };
 	tags: Array<{ category: string; value: string }>;
 	createdAt: string;
 	updatedAt: string;
