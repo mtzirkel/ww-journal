@@ -213,7 +213,6 @@ Deleting a trip sets `tripId = null` on all linked entries (orphan protection). 
 **Components:**
 - `RiverAutocomplete.svelte` -- searches IndexedDB as user types
 - `AddRiverModal.svelte` -- create new river inline
-- `FlowTimeline.svelte` -- reusable flow chart component
 
 **Critical invariants to test:**
 - Entry creation requires a selected river and date (save button disabled otherwise)
