@@ -11,7 +11,22 @@
 		"sourceMap": true,
 		"strict": true,
 		"moduleResolution": "bundler"
-	}
+	},
+	// Exclude e2e tests from svelte-check — Playwright types conflict with the
+	// vitest/SvelteKit type environment. E2E tests are run by Playwright directly
+	// (npm run test:e2e), not through the SvelteKit / svelte-check pipeline.
+	// Service worker excludes are re-stated here because adding "exclude" in an
+	// extending tsconfig does not merge with the base — it replaces it entirely.
+	"exclude": [
+		"tests/e2e/**",
+		"node_modules/**",
+		"src/service-worker.js",
+		"src/service-worker/**/*.js",
+		"src/service-worker.ts",
+		"src/service-worker/**/*.ts",
+		"src/service-worker.d.ts",
+		"src/service-worker/**/*.d.ts"
+	]
 	// Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
 	// except $lib which is handled by https://svelte.dev/docs/kit/configuration#files
 	//
