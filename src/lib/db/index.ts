@@ -154,6 +154,55 @@ db.version(5).stores({
 	});
 });
 
+// v7: multi-activity. Adds activityType + envelope metrics; moves the
+// paddle-only riverId/flow into details.paddle. Note v5/v6 above are declared
+// out of numeric order — Dexie sorts by version internally, so it still works.
+//
+// Clean (already-synced) entries are dropped and lastSyncedAt reset so they are
+// re-pulled from the server in canonical v7 shape — same approach as v6. Dirty
+// (unpushed) entries are converted in place so nothing local-only is lost.
+db.version(7).stores({
+	rivers: 'id, riverName, state, externalGaugeId, [riverName+state], updatedAt, dirty',
+	entries: 'id, datetime, activityType, details.riverId, tripId, updatedAt, dirty, deletedAt',
+	trips: 'id, name, startDate, updatedAt, dirty, deletedAt',
+	tagCategories: 'id, name, updatedAt, dirty, deletedAt',
+	syncSettings: 'key'
+}).upgrade(async tx => {
+	// Idempotent: tolerates entries already carrying details, and entries with
+	// no riverId at all. A half-applied upgrade can be re-run safely.
+	await tx.table('entries').toCollection().modify((entry: Record<string, unknown>) => {
+		if (!entry.activityType) entry.activityType = 'paddle';
+
+		if (!entry.details || typeof entry.details !== 'object') {
+			const details: Record<string, unknown> = {};
+			if (typeof entry.riverId === 'number') details.riverId = entry.riverId;
+			if (typeof entry.flow === 'number') details.flow = entry.flow;
+			entry.details = details;
+		}
+		delete entry.riverId;
+		delete entry.flow;
+
+		if (entry.title === undefined) entry.title = null;
+		if (entry.place === undefined) entry.place = null;
+		if (entry.lat === undefined) entry.lat = null;
+		if (entry.lon === undefined) entry.lon = null;
+		if (entry.distance === undefined) entry.distance = null;
+		if (entry.durationSeconds === undefined) entry.durationSeconds = null;
+		if (entry.elevationGain === undefined) entry.elevationGain = null;
+	});
+
+	// Drop clean entries so the next sync re-pulls them from the server, which
+	// is canonical and already migrated. Dirty entries are kept and pushed.
+	const dirtyIds = await tx.table('entries')
+		.filter((e: { dirty: boolean }) => e.dirty === true)
+		.primaryKeys();
+	const allIds = await tx.table('entries').toCollection().primaryKeys();
+	const toDelete = (allIds as string[]).filter((id: string) => !(dirtyIds as string[]).includes(id));
+	await tx.table('entries').bulkDelete(toDelete);
+
+	await tx.table('syncSettings').delete('lastSyncedAt');
+});
+
 export { db };
 
 db.on('ready', () => {
