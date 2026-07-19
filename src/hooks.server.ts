@@ -11,10 +11,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 		return resolve(event);
 	}
 
-	// Dev bypass — skip auth entirely in development
+	// Dev bypass — skip auth entirely in development.
+	// DEV_USER_ID lets a dev instance impersonate a real user id so it can be
+	// pointed at a copy of production data; defaults to a synthetic id.
 	if (env.DEV_BYPASS_AUTH === 'true') {
 		event.locals.user = {
-			id: 'dev-user',
+			id: env.DEV_USER_ID || 'dev-user',
 			username: 'dev',
 			isAdmin: true,
 			apps: [{ slug: 'ww-journal', name: 'WW Journal', role: 'admin' }]

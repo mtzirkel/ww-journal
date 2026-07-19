@@ -12,6 +12,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { River, JournalEntry } from '$lib/types.js';
+import { riverIdOf, flowOf } from '$lib/activity.js';
 
 // ---------------------------------------------------------------------------
 // River interface
@@ -105,8 +106,15 @@ describe('JournalEntry type', () => {
 		const entry: JournalEntry = {
 			id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
 			datetime: '2024-06-01T12:00:00.000Z',
-			riverId: 42,
-			flow: 450,
+			activityType: 'paddle',
+			title: null,
+			place: null,
+			lat: null,
+			lon: null,
+			distance: null,
+			durationSeconds: null,
+			elevationGain: null,
+			details: { riverId: 42, flow: 450 },
 			description: 'Great run, medium water',
 			tripId: null,
 			tags: [],
@@ -117,8 +125,8 @@ describe('JournalEntry type', () => {
 		};
 
 		expect(typeof entry.id).toBe('string');
-		expect(entry.riverId).toBe(42);
-		expect(entry.flow).toBe(450);
+		expect(riverIdOf(entry)).toBe(42);
+		expect(flowOf(entry)).toBe(450);
 		expect(entry.dirty).toBe(true);
 	});
 
@@ -128,8 +136,15 @@ describe('JournalEntry type', () => {
 		const entry: JournalEntry = {
 			id: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
 			datetime: '2024-06-15T12:00:00.000Z',
-			riverId: 7,
-			flow: 820,
+			activityType: 'paddle',
+			title: null,
+			place: null,
+			lat: null,
+			lon: null,
+			distance: null,
+			durationSeconds: null,
+			elevationGain: null,
+			details: { riverId: 7, flow: 820 },
 			description: 'High water flush',
 			tripId: null,
 			tags: [],
@@ -149,8 +164,15 @@ describe('JournalEntry type', () => {
 		const synced: JournalEntry = {
 			id: 'c3d4e5f6-a7b8-9012-cdef-123456789012',
 			datetime: '2024-01-01T12:00:00.000Z',
-			riverId: 1,
-			flow: 100,
+			activityType: 'paddle',
+			title: null,
+			place: null,
+			lat: null,
+			lon: null,
+			distance: null,
+			durationSeconds: null,
+			elevationGain: null,
+			details: { riverId: 1, flow: 100 },
 			description: '',
 			tripId: null,
 			tags: [],
@@ -168,8 +190,15 @@ describe('JournalEntry type', () => {
 		const entry: JournalEntry = {
 			id: 'd4e5f6a7-b8c9-0123-def0-234567890123',
 			datetime: '2024-06-01T12:00:00.000Z',
-			riverId: 1,
-			flow: 500,
+			activityType: 'paddle',
+			title: null,
+			place: null,
+			lat: null,
+			lon: null,
+			distance: null,
+			durationSeconds: null,
+			elevationGain: null,
+			details: { riverId: 1, flow: 500 },
 			description: 'test',
 			tripId: null,
 			tags: [],

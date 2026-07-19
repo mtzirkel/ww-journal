@@ -97,5 +97,27 @@ export async function migrate() {
 
 	await sql`CREATE INDEX IF NOT EXISTS tag_categories_user_updated ON tag_categories(user_id, updated_at)`;
 
+	// --- Multi-activity support ---
+	// Entries are no longer paddling-only. activity_type discriminates; the
+	// envelope carries cross-sport metrics; details holds sport-specific extras.
+	// river_id/flow stay as real columns (indexed, joined against rivers) and are
+	// mapped into details.paddle by the sync layer.
+	await sql`ALTER TABLE entries ADD COLUMN IF NOT EXISTS activity_type TEXT NOT NULL DEFAULT 'paddle'`;
+	await sql`ALTER TABLE entries ADD COLUMN IF NOT EXISTS title TEXT`;
+	await sql`ALTER TABLE entries ADD COLUMN IF NOT EXISTS place TEXT`;
+	await sql`ALTER TABLE entries ADD COLUMN IF NOT EXISTS lat NUMERIC`;
+	await sql`ALTER TABLE entries ADD COLUMN IF NOT EXISTS lon NUMERIC`;
+	await sql`ALTER TABLE entries ADD COLUMN IF NOT EXISTS distance NUMERIC`;
+	await sql`ALTER TABLE entries ADD COLUMN IF NOT EXISTS duration_seconds INTEGER`;
+	await sql`ALTER TABLE entries ADD COLUMN IF NOT EXISTS elevation_gain NUMERIC`;
+	await sql`ALTER TABLE entries ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}'::jsonb`;
+
+	// Paddle-only fields are no longer universal.
+	await sql`ALTER TABLE entries ALTER COLUMN river_id DROP NOT NULL`;
+	await sql`ALTER TABLE entries ALTER COLUMN flow DROP NOT NULL`;
+	await sql`ALTER TABLE entries ALTER COLUMN flow DROP DEFAULT`;
+
+	await sql`CREATE INDEX IF NOT EXISTS entries_user_activity ON entries(user_id, activity_type)`;
+
 	migrated = true;
 }

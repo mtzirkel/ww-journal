@@ -24,12 +24,20 @@ export interface SyncRiver {
 
 export interface SyncEntry {
 	id: string;
-	riverId: number;
+	activityType: string;
 	tripId: string | null;
 	date: string;
 	datetime: string;
-	flow: number;
+	title: string | null;
 	description: string;
+	place: string | null;
+	lat: number | null;
+	lon: number | null;
+	distance: number | null;
+	durationSeconds: number | null;
+	elevationGain: number | null;
+	/** Sport-specific payload. Paddle/fish carry riverId + flow here. */
+	details: { riverId?: number; flow?: number; [key: string]: unknown };
 	tags: Array<{ category: string; value: string }>;
 	createdAt: string;
 	updatedAt: string;
@@ -153,23 +161,44 @@ export async function pushChanges(userId: string, payload: SyncPayload): Promise
 
 	if (payload.entries) {
 		for (const e of payload.entries) {
-		await sql`
+			// riverId/flow land in their own columns; everything else stays in the
+			// details blob, so the two never disagree about the same value.
+			const { riverId, flow, ...restDetails } = (e.details ?? {}) as {
+				riverId?: number | null;
+				flow?: number | null;
+			};
+
+			await sql`
 				INSERT INTO entries (
-					id, user_id, river_id, trip_id, date, datetime, flow, description, tags,
-					created_at, updated_at, deleted_at
+					id, user_id, activity_type, river_id, trip_id, date, datetime, flow,
+					title, description, place, lat, lon, distance, duration_seconds,
+					elevation_gain, details, tags, created_at, updated_at, deleted_at
 				) VALUES (
-					${e.id}, ${userId}, ${e.riverId}, ${e.tripId}, ${e.datetime.slice(0, 10)}, ${new Date(e.datetime)}, ${e.flow},
-					${e.description}, ${sql.json(e.tags)},
+					${e.id}, ${userId}, ${e.activityType ?? 'paddle'}, ${riverId ?? null}, ${e.tripId},
+					${e.datetime.slice(0, 10)}, ${new Date(e.datetime)}, ${flow ?? null},
+					${e.title ?? null}, ${e.description}, ${e.place ?? null},
+					${e.lat ?? null}, ${e.lon ?? null}, ${e.distance ?? null},
+					${e.durationSeconds ?? null}, ${e.elevationGain ?? null},
+					${sql.json(restDetails)}, ${sql.json(e.tags)},
 					${new Date(e.createdAt)}, ${new Date(e.updatedAt)},
 					${e.deletedAt ? new Date(e.deletedAt) : null}
 				)
 				ON CONFLICT (id) DO UPDATE SET
+					activity_type = EXCLUDED.activity_type,
 					river_id = EXCLUDED.river_id,
 					trip_id = EXCLUDED.trip_id,
 					date = EXCLUDED.date,
 					datetime = EXCLUDED.datetime,
 					flow = EXCLUDED.flow,
+					title = EXCLUDED.title,
 					description = EXCLUDED.description,
+					place = EXCLUDED.place,
+					lat = EXCLUDED.lat,
+					lon = EXCLUDED.lon,
+					distance = EXCLUDED.distance,
+					duration_seconds = EXCLUDED.duration_seconds,
+					elevation_gain = EXCLUDED.elevation_gain,
+					details = EXCLUDED.details,
 					tags = EXCLUDED.tags,
 					updated_at = EXCLUDED.updated_at,
 					deleted_at = EXCLUDED.deleted_at
@@ -276,14 +305,28 @@ function rowToRiver(r: any): SyncRiver {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function rowToEntry(r: any): SyncEntry {
 	const dateStr = typeof r.date === 'string' ? r.date : r.date.toISOString().slice(0, 10);
+	// river_id/flow live as relational columns but travel to the client nested
+	// under details, so non-river activities carry no river fields at all.
+	const details: Record<string, unknown> = { ...(r.details ?? {}) };
+	if (r.river_id !== null && r.river_id !== undefined) details.riverId = r.river_id;
+	if (r.flow !== null && r.flow !== undefined) details.flow = Number(r.flow);
+
 	return {
 		id: r.id,
-		riverId: r.river_id,
+		activityType: r.activity_type ?? 'paddle',
 		tripId: r.trip_id,
 		date: dateStr,
 		datetime: r.datetime ? (r.datetime instanceof Date ? r.datetime.toISOString() : r.datetime) : dateStr + 'T12:00:00.000Z',
-		flow: Number(r.flow),
+		title: r.title ?? null,
 		description: r.description,
+		place: r.place ?? null,
+		lat: r.lat === null || r.lat === undefined ? null : Number(r.lat),
+		lon: r.lon === null || r.lon === undefined ? null : Number(r.lon),
+		distance: r.distance === null || r.distance === undefined ? null : Number(r.distance),
+		durationSeconds: r.duration_seconds ?? null,
+		elevationGain:
+			r.elevation_gain === null || r.elevation_gain === undefined ? null : Number(r.elevation_gain),
+		details,
 		tags: r.tags ?? [],
 		createdAt: r.created_at.toISOString(),
 		updatedAt: r.updated_at.toISOString(),

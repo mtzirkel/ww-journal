@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { liveQuery } from 'dexie';
 	import { db, seedRivers } from '$lib/db/index.js';
+	import { riverIdOf, flowOf, riverIds, flows, mean, ACTIVITIES, activityMeta } from '$lib/activity.js';
 	import type { River, JournalEntry } from '$lib/types.js';
 	import * as Plot from '@observablehq/plot';
 	import { onMount } from 'svelte';
@@ -60,11 +61,13 @@
 				// Group by river name, track sections
 				const byName = new Map<string, Map<number, number>>();
 				for (const e of entries) {
-					const r = rivers.get(e.riverId);
+					const rid = riverIdOf(e);
+					if (rid === null) continue; // non-river activity — not part of river stats
+					const r = rivers.get(rid);
 					const name = r?.riverName ?? 'Unknown';
 					if (!byName.has(name)) byName.set(name, new Map());
 					const sections = byName.get(name)!;
-					sections.set(e.riverId, (sections.get(e.riverId) ?? 0) + 1);
+					sections.set(rid, (sections.get(rid) ?? 0) + 1);
 				}
 
 				let colorIdx = 0;
@@ -89,7 +92,7 @@
 					})
 					.sort((a, b) => b.totalCount - a.totalCount);
 
-				const uniqueRiverIds = new Set(entries.map((e) => e.riverId));
+				const uniqueRiverIds = new Set(riverIds(entries));
 				return { total, year, month, riverCount: uniqueRiverIds.size, grouped, entries };
 			});
 
@@ -109,10 +112,20 @@
 
 	let maxCount = $derived(Math.max(...groupedRivers.map((r) => r.totalCount), 1));
 
+	// Days per activity — every type that actually has entries, most-used first.
+	let activityCounts = $derived(
+		ACTIVITIES.map((a) => ({
+			...a,
+			count: allEntries.filter((e) => e.activityType === a.type).length
+		}))
+			.filter((a) => a.count > 0)
+			.sort((a, b) => b.count - a.count)
+	);
+
 	// For the timeline: get all rivers + entries for the selected river name group
 	let selectedGroup = $derived(selectedRiverName ? groupedRivers.find((g) => g.riverName === selectedRiverName) ?? null : null);
 	let selectedGroupEntries = $derived(
-		selectedGroup ? allEntries.filter((e) => selectedGroup!.sections.some((s) => s.riverId === e.riverId)) : []
+		selectedGroup ? allEntries.filter((e) => selectedGroup!.sections.some((s) => s.riverId === riverIdOf(e))) : []
 	);
 
 	// Chart calculations — Observable Plot
@@ -138,18 +151,22 @@
 		if (!chartContainer || chartSorted.length === 0) return;
 
 		const colorMap = sectionColorMap();
-		const data = chartSorted.map(e => ({
-			date: new Date(e.datetime),
-			flow: e.flow,
-			id: e.id,
-			riverId: e.riverId,
-			color: colorMap.get(e.riverId) ?? '#238c91',
-			label: `${Math.round(e.flow)} CFS — ${new Date(e.datetime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
-			section: (() => {
-				const r = allRivers.get(e.riverId);
-				return r?.section ?? null;
-			})()
-		}));
+		// Flow chart plots river days only — activities without a river or a
+		// recorded flow have nothing to place on these axes.
+		const data = chartSorted.flatMap(e => {
+			const rid = riverIdOf(e);
+			const fl = flowOf(e);
+			if (rid === null || fl === null) return [];
+			return [{
+				date: new Date(e.datetime),
+				flow: fl,
+				id: e.id,
+				riverId: rid,
+				color: colorMap.get(rid) ?? '#238c91',
+				label: `${Math.round(fl)} CFS — ${new Date(e.datetime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+				section: allRivers.get(rid)?.section ?? null
+			}];
+		});
 
 		const plot = Plot.plot({
 			width: 580,
@@ -214,11 +231,11 @@
 
 	// Year in review stats
 	let yearEntries = $derived(allEntries.filter((e) => e.datetime.startsWith(new Date().getFullYear().toString())));
-	let yearRiverCount = $derived(new Set(yearEntries.map((e) => e.riverId)).size);
+	let yearRiverCount = $derived(new Set(riverIds(yearEntries)).size);
 	let yearTopRiver = $derived(() => {
 		if (yearEntries.length === 0) return null;
 		const counts = new Map<number, number>();
-		for (const e of yearEntries) counts.set(e.riverId, (counts.get(e.riverId) ?? 0) + 1);
+		for (const rid of riverIds(yearEntries)) counts.set(rid, (counts.get(rid) ?? 0) + 1);
 		const topId = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
 		const r = topId ? allRivers.get(topId) : null;
 		return r ? (r.section ? `${r.riverName} — ${r.section}` : r.riverName) : null;
@@ -227,7 +244,7 @@
 	// Month in review stats
 	let monthStr = $derived(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
 	let monthEntries = $derived(allEntries.filter((e) => e.datetime.startsWith(monthStr)));
-	let monthRiverCount = $derived(new Set(monthEntries.map((e) => e.riverId)).size);
+	let monthRiverCount = $derived(new Set(riverIds(monthEntries)).size);
 </script>
 
 <h1 class="text-3xl font-bold mb-6">Dashboard</h1>
@@ -268,7 +285,7 @@
 							<div class="text-xs text-base-content/50">Rivers</div>
 						</div>
 						<div class="text-center">
-							<div class="text-lg font-bold">{Math.round(yearEntries.reduce((s, e) => s + e.flow, 0) / yearEntries.length)}</div>
+							<div class="text-lg font-bold">{mean(flows(yearEntries))?.toFixed(0) ?? "—"}</div>
 							<div class="text-xs text-base-content/50">Avg CFS</div>
 						</div>
 					</div>
@@ -296,7 +313,7 @@
 							<div class="text-xs text-base-content/50">Rivers</div>
 						</div>
 						<div class="text-center">
-							<div class="text-lg font-bold">{Math.round(monthEntries.reduce((s, e) => s + e.flow, 0) / monthEntries.length)}</div>
+							<div class="text-lg font-bold">{mean(flows(monthEntries))?.toFixed(0) ?? "—"}</div>
 							<div class="text-xs text-base-content/50">Avg CFS</div>
 						</div>
 					</div>
@@ -339,12 +356,12 @@
 					<div class="grid grid-cols-3 gap-3 mt-4">
 						<div class="bg-base-200 rounded-lg p-3 text-center">
 							<div class="text-xs text-base-content/50">Highest</div>
-							<div class="font-mono font-bold text-lg">{Math.round(Math.max(...selectedGroupEntries.map(e => e.flow)))}</div>
+							<div class="font-mono font-bold text-lg">{flows(selectedGroupEntries).length ? Math.round(Math.max(...flows(selectedGroupEntries))) : "—"}</div>
 							<div class="text-xs text-base-content/40">CFS</div>
 						</div>
 						<div class="bg-base-200 rounded-lg p-3 text-center">
 							<div class="text-xs text-base-content/50">Lowest</div>
-							<div class="font-mono font-bold text-lg">{Math.round(Math.min(...selectedGroupEntries.map(e => e.flow)))}</div>
+							<div class="font-mono font-bold text-lg">{flows(selectedGroupEntries).length ? Math.round(Math.min(...flows(selectedGroupEntries))) : "—"}</div>
 							<div class="text-xs text-base-content/40">CFS</div>
 						</div>
 						<div class="bg-base-200 rounded-lg p-3 text-center">
@@ -357,6 +374,23 @@
 					<div class="mt-4 overflow-x-auto">
 						<div bind:this={chartContainer}></div>
 					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	{#if activityCounts.length > 1}
+		<div class="card bg-base-100 shadow mb-4">
+			<div class="card-body">
+				<h2 class="card-title text-lg mb-2">Days by Activity</h2>
+				<div class="flex flex-wrap gap-2">
+					{#each activityCounts as a (a.type)}
+						<a href="/entries" class="badge badge-lg badge-outline gap-1">
+							<span>{a.icon}</span>
+							<span>{a.label}</span>
+							<span class="font-bold">{a.count}</span>
+						</a>
+					{/each}
 				</div>
 			</div>
 		</div>

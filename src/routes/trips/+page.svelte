@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { liveQuery } from 'dexie';
 	import { db, seedRivers } from '$lib/db/index.js';
+	import { riverIdOf, flowOf, riverIds, lookupRiver } from '$lib/activity.js';
 	import type { Trip, JournalEntry, River } from '$lib/types.js';
 	import { onMount } from 'svelte';
 	import { sync, syncStore } from '$lib/sync.svelte.js';
@@ -134,7 +135,7 @@
 			return all.filter((e) => !e.deletedAt);
 		});
 		assignSubscription = observable.subscribe((value) => {
-			assignEntries = value.map((e) => ({ ...e, river: rivers.get(e.riverId) }));
+			assignEntries = value.map((e) => ({ ...e, river: lookupRiver(rivers, e) }));
 			assignLoaded = true;
 		});
 	}
@@ -366,7 +367,7 @@
 							</div>
 							<div class="text-right text-xs shrink-0">
 								<div class="text-base-content/50">{new Date(entry.datetime).toLocaleDateString()}</div>
-								<div class="font-mono">{entry.flow} cfs</div>
+								<div class="font-mono">{flowOf(entry)} cfs</div>
 							</div>
 						</label>
 					{/each}

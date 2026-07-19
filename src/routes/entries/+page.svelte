@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { liveQuery } from 'dexie';
 	import { db, seedRivers } from '$lib/db/index.js';
+	import { riverIdOf, riverIds, lookupRiver, activityMeta, entryMetrics, ACTIVITIES } from '$lib/activity.js';
 	import type { River, JournalEntry, Trip } from '$lib/types.js';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -11,6 +12,7 @@
 	let rivers = $state<Map<number, River>>(new Map());
 	let trips = $state<Map<string, Trip>>(new Map());
 	let loaded = $state(false);
+	let filterActivity = $state<string>('');
 
 	// URL params come from +page.ts load — reactive on every navigation
 	let filterRiverId = $derived(data.filterRiverId);
@@ -37,7 +39,7 @@
 					.filter((e) => !e.deletedAt)
 					.map((e) => ({
 						...e,
-						river: rivers.get(e.riverId),
+						river: lookupRiver(rivers, e),
 						trip: e.tripId ? trips.get(e.tripId) : undefined
 					}));
 			});
@@ -55,7 +57,8 @@
 
 	let filteredEntries = $derived.by(() => {
 		let result = entries;
-		if (filterRiverId) result = result.filter((e) => e.riverId === filterRiverId);
+		if (filterActivity) result = result.filter((e) => e.activityType === filterActivity);
+		if (filterRiverId) result = result.filter((e) => riverIdOf(e) === filterRiverId);
 		if (filterYear) result = result.filter((e) => e.datetime.startsWith(filterYear!));
 		if (filterMonth) result = result.filter((e) => e.datetime.startsWith(filterMonth!));
 		const q = search.trim().toLowerCase();
@@ -65,6 +68,8 @@
 				if (e.river?.section?.toLowerCase().includes(q)) return true;
 				if (e.description?.toLowerCase().includes(q)) return true;
 				if (e.trip?.name?.toLowerCase().includes(q)) return true;
+				if (e.place?.toLowerCase().includes(q)) return true;
+				if (e.title?.toLowerCase().includes(q)) return true;
 				if (e.tags?.some((t) => t.value.toLowerCase().includes(q) || t.category.toLowerCase().includes(q))) return true;
 				return false;
 			});
@@ -85,17 +90,17 @@
 	});
 
 	let riverSummary = $derived(
-		[...new Set(entries.map((e) => e.riverId))]
+		[...new Set(riverIds(entries))]
 			.map((id) => ({
 				river: rivers.get(id),
-				count: entries.filter((e) => e.riverId === id).length
+				count: entries.filter((e) => riverIdOf(e) === id).length
 			}))
 			.filter((r) => r.river)
 			.sort((a, b) => b.count - a.count)
 	);
 
 	let uniqueRivers = $derived(
-		[...new Set(entries.map((e) => e.riverId))]
+		[...new Set(riverIds(entries))]
 			.map((id) => rivers.get(id))
 			.filter(Boolean)
 			.sort((a, b) => a!.riverName.localeCompare(b!.riverName))
@@ -119,10 +124,19 @@
 	<div class="mb-4 flex flex-col sm:flex-row gap-2">
 		<input
 			type="search"
-			placeholder="Search river, notes, tag, trip..."
+			placeholder="Search place, river, notes, tag, trip..."
 			bind:value={search}
 			class="input input-bordered input-sm w-full sm:flex-1"
 		/>
+		<select class="select select-bordered select-sm w-full sm:w-auto" bind:value={filterActivity}>
+			<option value="">All activities ({entries.length})</option>
+			{#each ACTIVITIES as a (a.type)}
+				{@const n = entries.filter((e) => e.activityType === a.type).length}
+				{#if n > 0}
+					<option value={a.type}>{a.icon} {a.label} ({n})</option>
+				{/if}
+			{/each}
+		</select>
 		{#if uniqueRivers.length > 1}
 			<select
 				class="select select-bordered select-sm w-full sm:w-auto"
@@ -131,11 +145,12 @@
 					goto(val ? `/entries?river=${val}` : '/entries');
 				}}
 			>
-				<option value="">All Rivers ({entries.length})</option>
+				<!-- Count river days only — non-river activities are not on any river. -->
+				<option value="">All rivers ({riverIds(entries).length})</option>
 				{#each uniqueRivers as river}
 					<option value={river?.id} selected={river?.id === filterRiverId}>
 						{river?.riverName}{river?.section ? ` — ${river.section}` : ''} ({entries.filter(
-							(e) => e.riverId === river?.id
+							(e) => riverIdOf(e) === river?.id
 						).length})
 					</option>
 				{/each}
@@ -187,7 +202,7 @@
 	<div class="text-center py-12 text-base-content/50">
 		<p class="text-lg mb-2">No entries {filterLabel ? `for ${filterLabel}` : 'yet'}</p>
 		{#if !filterLabel}
-			<p class="text-sm">Log your first river day!</p>
+			<p class="text-sm">Log your first day out!</p>
 			<a href="/entries/new" class="btn btn-primary mt-4">Log a Day</a>
 		{/if}
 	</div>
@@ -202,9 +217,19 @@
 					<div class="flex justify-between items-start">
 						<div>
 							<h3 class="font-bold">
-								{entry.river?.riverName ?? 'Unknown River'}
-								{#if entry.river?.section}
-									<span class="font-normal text-base-content/50"> — {entry.river.section}</span>
+								<span title={activityMeta(entry.activityType).label}>
+									{activityMeta(entry.activityType).icon}
+								</span>
+								{#if entry.river}
+									{entry.river.riverName}
+									{#if entry.river.section}
+										<span class="font-normal text-base-content/50"> — {entry.river.section}</span>
+									{/if}
+								{:else}
+									{entry.title || entry.place || activityMeta(entry.activityType).label}
+									{#if entry.title && entry.place}
+										<span class="font-normal text-base-content/50"> — {entry.place}</span>
+									{/if}
 								{/if}
 							</h3>
 							{#if entry.trip}
@@ -228,9 +253,9 @@
 							<div class="text-base-content/50">
 								{new Date(entry.datetime).toLocaleDateString()}
 							</div>
-							{#if entry.flow}
-								<div class="font-mono">{entry.flow} cfs</div>
-							{/if}
+							{#each entryMetrics(entry) as metric}
+								<div class="font-mono">{metric}</div>
+							{/each}
 						</div>
 					</div>
 				</div>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { db, seedRivers } from '$lib/db/index.js';
+	import { riverIdOf, flowOf, riverIds, lookupRiver } from '$lib/activity.js';
 	import type { River, JournalEntry } from '$lib/types.js';
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
@@ -50,7 +51,7 @@
 			: entries;
 
 		// River IDs that have at least one entry in the filtered period
-		const riverIdsWithEntries = new Set(filteredEntries.map((e) => e.riverId));
+		const riverIdsWithEntries = new Set(filteredEntries.map((e) => riverIdOf(e)));
 
 		const features = rivers
 			.filter((r) => {
@@ -68,7 +69,7 @@
 				return true;
 			})
 			.map((r) => {
-				const entryCount = filteredEntries.filter((e) => e.riverId === r.id).length;
+				const entryCount = filteredEntries.filter((e) => riverIdOf(e) === r.id).length;
 				return {
 					type: 'Feature' as const,
 					geometry: { type: 'Point' as const, coordinates: [r.lon!, r.lat!] },
@@ -99,8 +100,8 @@
 		await seedRivers();
 
 		const entries = await db.entries.toArray();
-		const riverIds = [...new Set(entries.map((e) => e.riverId))];
-		const rivers = await db.rivers.bulkGet(riverIds);
+		const uniqueRiverIds = [...new Set(riverIds(entries))];
+		const rivers = await db.rivers.bulkGet(uniqueRiverIds);
 		const validRivers = rivers.filter((r): r is River => r !== undefined && r.lat !== null && r.lon !== null);
 
 		paddledRivers = validRivers;
