@@ -145,7 +145,8 @@
 					goto(val ? `/entries?river=${val}` : '/entries');
 				}}
 			>
-				<option value="">All Rivers ({entries.length})</option>
+				<!-- Count river days only — non-river activities are not on any river. -->
+				<option value="">All rivers ({riverIds(entries).length})</option>
 				{#each uniqueRivers as river}
 					<option value={river?.id} selected={river?.id === filterRiverId}>
 						{river?.riverName}{river?.section ? ` — ${river.section}` : ''} ({entries.filter(
