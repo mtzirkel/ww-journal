@@ -2,10 +2,21 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { db, seedRivers } from '$lib/db/index.js';
-	import { riverIdOf, flowOf } from '$lib/activity.js';
+	import {
+		ACTIVITIES,
+		activityMeta,
+		isRiverBased,
+		riverIdOf,
+		flowOf,
+		toMiles,
+		toFeet,
+		fromMiles,
+		fromFeet,
+		formatDuration
+	} from '$lib/activity.js';
 	import { fetchUsgsFlow } from '$lib/api/usgs.js';
 	import RiverAutocomplete from '$lib/components/RiverAutocomplete.svelte';
-	import type { River, JournalEntry, Trip } from '$lib/types.js';
+	import type { River, JournalEntry, Trip, ActivityType } from '$lib/types.js';
 	import { onMount } from 'svelte';
 	import { sync, syncStore } from '$lib/sync.svelte.js';
 
@@ -16,9 +27,14 @@
 	let editing = $state(false);
 
 	// Edit state
+	let editActivityType = $state<ActivityType>('paddle');
 	let editRiver = $state<River | null>(null);
+	let editPlace = $state('');
 	let editDatetime = $state('');
 	let editFlow = $state<number | null>(null);
+	let editDistanceMi = $state<number | null>(null);
+	let editElevationFt = $state<number | null>(null);
+	let editDurationHrs = $state<number | null>(null);
 	let editDescription = $state('');
 	let editTripId = $state<string | null>(null);
 	let fetchingFlow = $state(false);
@@ -36,21 +52,46 @@
 		trips = (await db.trips.toArray()).filter((t) => !t.deletedAt).sort((a, b) => a.name.localeCompare(b.name));
 	});
 
+	/** Headline: the river for river days, otherwise whatever names this outing. */
+	let heading = $derived.by(() => {
+		if (!entry) return '';
+		if (river) return river.riverName;
+		return entry.title || entry.place || activityMeta(entry.activityType).label;
+	});
+
 	function startEdit() {
 		if (!entry) return;
+		editActivityType = entry.activityType;
 		editRiver = river;
+		editPlace = entry.place ?? '';
 		editDatetime = new Date(entry.datetime).toISOString().slice(0, 16);
 		editFlow = flowOf(entry);
+		editDistanceMi = entry.distance === null ? null : Number(toMiles(entry.distance).toFixed(2));
+		editElevationFt = entry.elevationGain === null ? null : Math.round(toFeet(entry.elevationGain));
+		editDurationHrs = entry.durationSeconds === null ? null : Number((entry.durationSeconds / 3600).toFixed(2));
 		editDescription = entry.description;
 		editTripId = entry.tripId ?? null;
 		editing = true;
 	}
 
 	async function saveEdit() {
-		if (!entry?.id || !editRiver) return;
+		if (!entry?.id) return;
+		// A river is only required for river-based activities.
+		if (isRiverBased(editActivityType) && !editRiver) return;
 		saving = true;
+
+		const details =
+			isRiverBased(editActivityType) && editRiver
+				? { riverId: editRiver.id, flow: editFlow ?? null }
+				: {};
+
 		await db.entries.update(entry.id, {
-			details: { riverId: editRiver.id, flow: editFlow ?? null },
+			activityType: editActivityType,
+			place: editPlace.trim() || null,
+			details,
+			distance: editDistanceMi === null ? null : fromMiles(editDistanceMi),
+			elevationGain: editElevationFt === null ? null : fromFeet(editElevationFt),
+			durationSeconds: editDurationHrs === null ? null : Math.round(editDurationHrs * 3600),
 			datetime: new Date(editDatetime).toISOString(),
 			description: editDescription,
 			tripId: editTripId,
@@ -58,7 +99,7 @@
 			dirty: true
 		});
 		entry = await db.entries.get(entry.id) ?? null;
-		river = editRiver;
+		river = isRiverBased(editActivityType) ? editRiver : null;
 		trip = editTripId ? (await db.trips.get(editTripId)) ?? null : null;
 		editing = false;
 		saving = false;
@@ -105,25 +146,72 @@
 	<div class="card bg-base-100 shadow">
 		<div class="card-body">
 			<div class="form-control mb-4">
-				<label class="label"><span class="label-text">River</span></label>
-				<RiverAutocomplete bind:value={editRiver} />
+				<span class="label-text mb-2 block">Activity</span>
+				<div class="flex flex-wrap gap-2">
+					{#each ACTIVITIES as activity (activity.type)}
+						<button
+							type="button"
+							class="btn btn-sm {editActivityType === activity.type ? 'btn-primary' : 'btn-outline'}"
+							aria-pressed={editActivityType === activity.type}
+							onclick={() => (editActivityType = activity.type)}
+						>
+							{activity.icon}
+							{activity.label}
+						</button>
+					{/each}
+				</div>
 			</div>
 
-			<div class="grid grid-cols-2 gap-4 mb-4">
+			{#if isRiverBased(editActivityType)}
+				<div class="form-control mb-4">
+					<label class="label"><span class="label-text">River</span></label>
+					<RiverAutocomplete bind:value={editRiver} />
+				</div>
+			{:else}
+				<div class="form-control mb-4">
+					<label class="label" for="edit-place"><span class="label-text">Place</span></label>
+					<input
+						type="text"
+						id="edit-place"
+						class="input input-bordered"
+						placeholder="Trail, route, or location"
+						bind:value={editPlace}
+					/>
+				</div>
+			{/if}
+
+			<div class="grid {isRiverBased(editActivityType) ? 'grid-cols-2' : 'grid-cols-1'} gap-4 mb-4">
 				<div class="form-control">
 					<label class="label" for="edit-datetime"><span class="label-text">Date & Time</span></label>
 					<input type="datetime-local" id="edit-datetime" class="input input-bordered" bind:value={editDatetime} />
 				</div>
-				<div class="form-control">
-					<label class="label" for="edit-flow"><span class="label-text">Flow (CFS)</span></label>
-					<div class="join w-full">
-						<input type="number" id="edit-flow" class="input input-bordered join-item w-full" bind:value={editFlow} />
-						{#if editRiver?.externalGaugeId && editRiver.externalGaugeSource === 'usgs'}
-							<button type="button" class="btn join-item btn-outline" disabled={fetchingFlow} onclick={fetchFlow}>
-								{fetchingFlow ? '...' : '⟳'}
-							</button>
-						{/if}
+				{#if isRiverBased(editActivityType)}
+					<div class="form-control">
+						<label class="label" for="edit-flow"><span class="label-text">Flow (CFS)</span></label>
+						<div class="join w-full">
+							<input type="number" id="edit-flow" class="input input-bordered join-item w-full" bind:value={editFlow} />
+							{#if editRiver?.externalGaugeId && editRiver.externalGaugeSource === 'usgs'}
+								<button type="button" class="btn join-item btn-outline" disabled={fetchingFlow} onclick={fetchFlow}>
+									{fetchingFlow ? '...' : '⟳'}
+								</button>
+							{/if}
+						</div>
 					</div>
+				{/if}
+			</div>
+
+			<div class="grid grid-cols-3 gap-4 mb-4">
+				<div class="form-control">
+					<label class="label" for="edit-distance"><span class="label-text">Distance (mi)</span></label>
+					<input type="number" step="0.1" id="edit-distance" class="input input-bordered" placeholder="—" bind:value={editDistanceMi} />
+				</div>
+				<div class="form-control">
+					<label class="label" for="edit-elevation"><span class="label-text">Elevation (ft)</span></label>
+					<input type="number" step="10" id="edit-elevation" class="input input-bordered" placeholder="—" bind:value={editElevationFt} />
+				</div>
+				<div class="form-control">
+					<label class="label" for="edit-duration"><span class="label-text">Duration (hrs)</span></label>
+					<input type="number" step="0.25" id="edit-duration" class="input input-bordered" placeholder="—" bind:value={editDurationHrs} />
 				</div>
 			</div>
 
@@ -144,7 +232,11 @@
 				<textarea id="edit-desc" class="textarea textarea-bordered" rows="4" bind:value={editDescription}></textarea>
 			</div>
 
-			<button class="btn btn-primary w-full" disabled={!editRiver || saving} onclick={saveEdit}>
+			<button
+				class="btn btn-primary w-full"
+				disabled={(isRiverBased(editActivityType) && !editRiver) || saving}
+				onclick={saveEdit}
+			>
 				{saving ? 'Saving...' : 'Save Changes'}
 			</button>
 		</div>
@@ -161,21 +253,50 @@
 	<div class="card bg-base-100 shadow">
 		<div class="card-body">
 			<h2 class="card-title text-2xl">
-				{river?.riverName ?? 'Unknown River'}
+				<span title={activityMeta(entry.activityType).label}>
+					{activityMeta(entry.activityType).icon}
+				</span>
+				{heading}
 				{#if river?.section}
 					<span class="font-normal text-base-content/50 text-lg"> — {river.section}</span>
 				{/if}
 			</h2>
 
-			<div class="grid grid-cols-2 gap-4 mt-4">
+			<div class="flex flex-wrap gap-x-10 gap-y-4 mt-4">
 				<div>
 					<p class="text-sm text-base-content/50">Date</p>
 					<p class="font-medium">{new Date(entry.datetime).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
 				</div>
-				<div>
-					<p class="text-sm text-base-content/50">Flow</p>
-					<p class="font-mono text-lg">{flowOf(entry)} <span class="text-sm text-base-content/50">CFS</span></p>
-				</div>
+				{#if flowOf(entry) !== null}
+					<div>
+						<p class="text-sm text-base-content/50">Flow</p>
+						<p class="font-mono text-lg">{flowOf(entry)?.toLocaleString()} <span class="text-sm text-base-content/50">CFS</span></p>
+					</div>
+				{/if}
+				{#if river && entry.place}
+					<div>
+						<p class="text-sm text-base-content/50">Place</p>
+						<p class="font-medium">{entry.place}</p>
+					</div>
+				{/if}
+				{#if entry.distance !== null}
+					<div>
+						<p class="text-sm text-base-content/50">Distance</p>
+						<p class="font-mono text-lg">{toMiles(entry.distance).toFixed(1)} <span class="text-sm text-base-content/50">mi</span></p>
+					</div>
+				{/if}
+				{#if entry.elevationGain !== null}
+					<div>
+						<p class="text-sm text-base-content/50">Elevation</p>
+						<p class="font-mono text-lg">{Math.round(toFeet(entry.elevationGain)).toLocaleString()} <span class="text-sm text-base-content/50">ft</span></p>
+					</div>
+				{/if}
+				{#if entry.durationSeconds !== null}
+					<div>
+						<p class="text-sm text-base-content/50">Duration</p>
+						<p class="font-mono text-lg">{formatDuration(entry.durationSeconds)}</p>
+					</div>
+				{/if}
 			</div>
 
 			{#if river}
