@@ -85,6 +85,39 @@ export function flows(entries: JournalEntry[]): number[] {
 	return entries.map(flowOf).filter((f): f is number => f !== null);
 }
 
+// Metrics are stored in SI (metres, seconds) and shown in imperial.
+const METRES_PER_MILE = 1609.344;
+const METRES_PER_FOOT = 0.3048;
+
+export const toMiles = (m: number) => m / METRES_PER_MILE;
+export const fromMiles = (mi: number) => mi * METRES_PER_MILE;
+export const toFeet = (m: number) => m / METRES_PER_FOOT;
+export const fromFeet = (ft: number) => ft * METRES_PER_FOOT;
+
+/** "1:45" / "20m" — compact duration for list rows. */
+export function formatDuration(seconds: number): string {
+	const h = Math.floor(seconds / 3600);
+	const m = Math.round((seconds % 3600) / 60);
+	return h > 0 ? `${h}:${String(m).padStart(2, '0')}` : `${m}m`;
+}
+
+/**
+ * Short metric summary for an entry — flow for river days, distance and
+ * elevation otherwise. Returns [] when nothing was recorded, so rows stay
+ * clean rather than showing zeros.
+ */
+export function entryMetrics(entry: JournalEntry): string[] {
+	const out: string[] = [];
+	const flow = flowOf(entry);
+	if (flow !== null) out.push(`${flow.toLocaleString()} cfs`);
+	if (entry.distance !== null) out.push(`${toMiles(entry.distance).toFixed(1)} mi`);
+	if (entry.elevationGain !== null) {
+		out.push(`${Math.round(toFeet(entry.elevationGain)).toLocaleString()} ft`);
+	}
+	if (entry.durationSeconds !== null) out.push(formatDuration(entry.durationSeconds));
+	return out;
+}
+
 /** Mean of an array, or null when empty — avoids NaN in the UI. */
 export function mean(values: number[]): number | null {
 	if (values.length === 0) return null;

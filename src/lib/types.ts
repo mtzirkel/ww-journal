@@ -90,7 +90,11 @@ export interface JournalEntry {
 	lat: number | null;
 	lon: number | null;
 
-	/** Cross-sport metrics. Null where not applicable or not recorded. */
+	/**
+	 * Cross-sport metrics, null where not applicable or not recorded.
+	 * Stored in SI — metres and seconds — because that is what Garmin supplies.
+	 * The UI converts to miles/feet on the way in and out.
+	 */
 	distance: number | null;
 	durationSeconds: number | null;
 	elevationGain: number | null;

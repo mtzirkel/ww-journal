@@ -6,13 +6,16 @@
 	import RiverAutocomplete from '$lib/components/RiverAutocomplete.svelte';
 	import TagInput from '$lib/components/TagInput.svelte';
 	import type { River, JournalEntry, Trip, EntryTag, ActivityType } from '$lib/types.js';
-	import { ACTIVITIES, isRiverBased } from '$lib/activity.js';
+	import { ACTIVITIES, isRiverBased, fromMiles, fromFeet } from '$lib/activity.js';
 	import { sync, syncStore } from '$lib/sync.svelte.js';
 	import { onMount } from 'svelte';
 
 	let activityType = $state<ActivityType>('paddle');
 	let selectedRiver = $state<River | null>(null);
 	let place = $state('');
+	let distanceMi = $state<number | null>(null);
+	let elevationFt = $state<number | null>(null);
+	let durationHrs = $state<number | null>(null);
 	let date = $state(new Date().toISOString().slice(0, 10)); // just the date, time assigned on save
 	let flow = $state<number | null>(null);
 	let description = $state('');
@@ -78,9 +81,9 @@
 				place: place.trim() || null,
 				lat: null,
 				lon: null,
-				distance: null,
-				durationSeconds: null,
-				elevationGain: null,
+				distance: distanceMi === null ? null : fromMiles(distanceMi),
+				durationSeconds: durationHrs === null ? null : Math.round(durationHrs * 3600),
+				elevationGain: elevationFt === null ? null : fromFeet(elevationFt),
 				details: isRiverBased(activityType) && selectedRiver
 					? { riverId: selectedRiver.id, flow: flow ?? null }
 					: {},
@@ -207,6 +210,30 @@
 			{/if}
 		</div>
 
+		<div class="grid grid-cols-3 gap-4 mb-4">
+			<div class="form-control">
+				<label class="label" for="distance">
+					<span class="label-text">Distance (mi)</span>
+				</label>
+				<input type="number" step="0.1" id="distance" class="input input-bordered"
+					placeholder="—" bind:value={distanceMi} />
+			</div>
+			<div class="form-control">
+				<label class="label" for="elevation">
+					<span class="label-text">Elevation (ft)</span>
+				</label>
+				<input type="number" step="10" id="elevation" class="input input-bordered"
+					placeholder="—" bind:value={elevationFt} />
+			</div>
+			<div class="form-control">
+				<label class="label" for="duration">
+					<span class="label-text">Duration (hrs)</span>
+				</label>
+				<input type="number" step="0.25" id="duration" class="input input-bordered"
+					placeholder="—" bind:value={durationHrs} />
+			</div>
+		</div>
+
 		<div class="form-control mb-4 w-full">
 			<label class="label" for="description">
 				<span class="label-text">Notes</span>
@@ -215,7 +242,7 @@
 				id="description"
 				class="textarea textarea-bordered w-full"
 				rows="4"
-				placeholder="How was the run?"
+				placeholder="How was it?"
 				bind:value={description}
 			></textarea>
 		</div>

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { liveQuery } from 'dexie';
 	import { db, seedRivers } from '$lib/db/index.js';
-	import { riverIdOf, flowOf, riverIds, flows, mean } from '$lib/activity.js';
+	import { riverIdOf, flowOf, riverIds, flows, mean, ACTIVITIES, activityMeta } from '$lib/activity.js';
 	import type { River, JournalEntry } from '$lib/types.js';
 	import * as Plot from '@observablehq/plot';
 	import { onMount } from 'svelte';
@@ -111,6 +111,16 @@
 	});
 
 	let maxCount = $derived(Math.max(...groupedRivers.map((r) => r.totalCount), 1));
+
+	// Days per activity — every type that actually has entries, most-used first.
+	let activityCounts = $derived(
+		ACTIVITIES.map((a) => ({
+			...a,
+			count: allEntries.filter((e) => e.activityType === a.type).length
+		}))
+			.filter((a) => a.count > 0)
+			.sort((a, b) => b.count - a.count)
+	);
 
 	// For the timeline: get all rivers + entries for the selected river name group
 	let selectedGroup = $derived(selectedRiverName ? groupedRivers.find((g) => g.riverName === selectedRiverName) ?? null : null);
@@ -364,6 +374,23 @@
 					<div class="mt-4 overflow-x-auto">
 						<div bind:this={chartContainer}></div>
 					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	{#if activityCounts.length > 1}
+		<div class="card bg-base-100 shadow mb-4">
+			<div class="card-body">
+				<h2 class="card-title text-lg mb-2">Days by Activity</h2>
+				<div class="flex flex-wrap gap-2">
+					{#each activityCounts as a (a.type)}
+						<a href="/entries" class="badge badge-lg badge-outline gap-1">
+							<span>{a.icon}</span>
+							<span>{a.label}</span>
+							<span class="font-bold">{a.count}</span>
+						</a>
+					{/each}
 				</div>
 			</div>
 		</div>
