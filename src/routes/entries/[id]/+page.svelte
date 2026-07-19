@@ -3,7 +3,6 @@
 	import { goto } from '$app/navigation';
 	import { db, seedRivers } from '$lib/db/index.js';
 	import {
-		ACTIVITIES,
 		activityMeta,
 		isRiverBased,
 		riverIdOf,
@@ -16,6 +15,7 @@
 	} from '$lib/activity.js';
 	import { fetchUsgsFlow } from '$lib/api/usgs.js';
 	import RiverAutocomplete from '$lib/components/RiverAutocomplete.svelte';
+	import ActivityPicker from '$lib/components/ActivityPicker.svelte';
 	import type { River, JournalEntry, Trip, ActivityType } from '$lib/types.js';
 	import { onMount } from 'svelte';
 	import { sync, syncStore } from '$lib/sync.svelte.js';
@@ -145,22 +145,8 @@
 
 	<div class="card bg-base-100 shadow">
 		<div class="card-body">
-			<div class="form-control mb-4">
-				<span class="label-text mb-2 block">Activity</span>
-				<div class="flex flex-wrap gap-2">
-					{#each ACTIVITIES as activity (activity.type)}
-						<button
-							type="button"
-							class="btn btn-sm {editActivityType === activity.type ? 'btn-primary' : 'btn-outline'}"
-							aria-pressed={editActivityType === activity.type}
-							onclick={() => (editActivityType = activity.type)}
-						>
-							{activity.icon}
-							{activity.label}
-						</button>
-					{/each}
-				</div>
-			</div>
+			<ActivityPicker bind:value={editActivityType} />
+
 
 			{#if isRiverBased(editActivityType)}
 				<div class="form-control mb-4">

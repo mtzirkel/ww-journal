@@ -1,6 +1,32 @@
 <script lang="ts">
 	import { sync, syncStore, rebuildLocalData } from '$lib/sync.svelte.js';
+	import { ACTIVITIES } from '$lib/activity.js';
+	import { getFavoriteActivities, setFavoriteActivities, activityUsage } from '$lib/db/index.js';
 	import { onMount } from 'svelte';
+
+	let favorites = $state<string[]>([]);
+	let favoritesLoaded = $state(false);
+
+	async function loadFavorites() {
+		const chosen = await getFavoriteActivities();
+		if (chosen && chosen.length > 0) {
+			favorites = chosen;
+		} else {
+			const used = await activityUsage();
+			favorites = used.length > 0 ? used : ['paddle'];
+		}
+		favoritesLoaded = true;
+	}
+
+	async function toggleFavorite(type: string) {
+		// Keep at least one pinned — an empty picker would strand the user.
+		const next = favorites.includes(type)
+			? favorites.filter((t) => t !== type)
+			: [...favorites, type];
+		if (next.length === 0) return;
+		favorites = next;
+		await setFavoriteActivities(next);
+	}
 
 	let rebuilding = $state(false);
 	let rebuildError = $state<string | null>(null);
@@ -25,6 +51,7 @@
 
 	onMount(async () => {
 		await syncStore.refreshPendingCount();
+		await loadFavorites();
 		if (navigator.storage?.persisted) {
 			persistGranted = await navigator.storage.persisted();
 		}
@@ -118,6 +145,31 @@
 				<button class="btn btn-sm btn-outline" onclick={requestPersist}>Request</button>
 			{/if}
 		</div>
+	</div>
+</div>
+
+<div class="card bg-base-100 shadow mb-4">
+	<div class="card-body">
+		<h2 class="card-title">Activities</h2>
+		<p class="text-base-content/70 text-sm">
+			Pinned activities show at the top when logging a day. The rest stay tucked
+			behind “More”. Saved on this device only.
+		</p>
+		{#if favoritesLoaded}
+			<div class="flex flex-wrap gap-2 mt-2">
+				{#each ACTIVITIES as a (a.type)}
+					<button
+						type="button"
+						class="btn btn-sm {favorites.includes(a.type) ? 'btn-primary' : 'btn-outline'}"
+						aria-pressed={favorites.includes(a.type)}
+						onclick={() => toggleFavorite(a.type)}
+					>
+						{a.icon}
+						{a.label}
+					</button>
+				{/each}
+			</div>
+		{/if}
 	</div>
 </div>
 

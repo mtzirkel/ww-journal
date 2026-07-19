@@ -5,8 +5,9 @@
 	import { fetchUsgsFlow } from '$lib/api/usgs.js';
 	import RiverAutocomplete from '$lib/components/RiverAutocomplete.svelte';
 	import TagInput from '$lib/components/TagInput.svelte';
+	import ActivityPicker from '$lib/components/ActivityPicker.svelte';
 	import type { River, JournalEntry, Trip, EntryTag, ActivityType } from '$lib/types.js';
-	import { ACTIVITIES, isRiverBased, fromMiles, fromFeet } from '$lib/activity.js';
+	import { isRiverBased, fromMiles, fromFeet } from '$lib/activity.js';
 	import { sync, syncStore } from '$lib/sync.svelte.js';
 	import { onMount } from 'svelte';
 
@@ -121,22 +122,8 @@
 
 <div class="card bg-base-100 shadow">
 	<div class="card-body">
-		<div class="form-control mb-4">
-			<span class="label-text mb-2 block">Activity</span>
-			<div class="flex flex-wrap gap-2">
-				{#each ACTIVITIES as activity (activity.type)}
-					<button
-						type="button"
-						class="btn btn-sm {activityType === activity.type ? 'btn-primary' : 'btn-outline'}"
-						aria-pressed={activityType === activity.type}
-						onclick={() => (activityType = activity.type)}
-					>
-						{activity.icon}
-						{activity.label}
-					</button>
-				{/each}
-			</div>
-		</div>
+		<ActivityPicker bind:value={activityType} />
+
 
 		{#if isRiverBased(activityType)}
 			<div class="form-control mb-4">

@@ -240,3 +240,40 @@ export async function getLastSyncedAt(): Promise<string | null> {
 export async function setLastSyncedAt(iso: string) {
 	await db.syncSettings.put({ key: 'lastSyncedAt', value: iso });
 }
+
+const FAVOURITES_KEY = 'favoriteActivities';
+
+/**
+ * Activities pinned to the top of the picker.
+ *
+ * Device-local: syncSettings is not part of the sync payload, so this does not
+ * follow the user between devices. Moving it server-side would need a settings
+ * table; until then a phone and a laptop each keep their own list.
+ *
+ * Returns null when the user has never chosen, so callers can fall back to
+ * usage rather than to an arbitrary default.
+ */
+export async function getFavoriteActivities(): Promise<string[] | null> {
+	const row = await db.syncSettings.get(FAVOURITES_KEY);
+	if (!row?.value) return null;
+	try {
+		const parsed = JSON.parse(row.value);
+		return Array.isArray(parsed) ? parsed : null;
+	} catch {
+		return null;
+	}
+}
+
+export async function setFavoriteActivities(types: string[]) {
+	await db.syncSettings.put({ key: FAVOURITES_KEY, value: JSON.stringify(types) });
+}
+
+/** Activity types the user has actually logged, most-used first. */
+export async function activityUsage(): Promise<string[]> {
+	const counts = new Map<string, number>();
+	await db.entries.each((e) => {
+		if (e.deletedAt) return;
+		counts.set(e.activityType, (counts.get(e.activityType) ?? 0) + 1);
+	});
+	return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([type]) => type);
+}
