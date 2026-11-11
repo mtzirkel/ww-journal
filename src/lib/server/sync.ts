@@ -303,7 +303,7 @@ function rowToRiver(r: any): SyncRiver {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function rowToEntry(r: any): SyncEntry {
+export function rowToEntry(r: any): SyncEntry {
 	const dateStr = typeof r.date === 'string' ? r.date : r.date.toISOString().slice(0, 10);
 	// river_id/flow live as relational columns but travel to the client nested
 	// under details, so non-river activities carry no river fields at all.
@@ -335,7 +335,7 @@ function rowToEntry(r: any): SyncEntry {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function rowToTrip(r: any): SyncTrip {
+export function rowToTrip(r: any): SyncTrip {
 	return {
 		id: r.id,
 		name: r.name,

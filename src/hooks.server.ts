@@ -3,11 +3,14 @@ import { redirect } from '@sveltejs/kit';
 import { verifyAuthToken } from '$lib/server/auth.js';
 import { env } from '$env/dynamic/private';
 
-const PUBLIC_PATHS = ['/api/health'];
+// /mcp authenticates with OAuth bearer tokens itself (never cookies), and the
+// .well-known metadata must be reachable without login for MCP discovery.
+const PUBLIC_PATHS = ['/api/health', '/mcp', '/.well-known/oauth-protected-resource', '/.well-known/oauth-authorization-server'];
 
 export const handle: Handle = async ({ event, resolve }) => {
 	// Allow public paths
-	if (PUBLIC_PATHS.some((p) => event.url.pathname.startsWith(p))) {
+	const path = event.url.pathname;
+	if (PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'))) {
 		return resolve(event);
 	}
 

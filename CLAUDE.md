@@ -5,11 +5,15 @@ Offline-first PWA for logging whitewater kayaking days. SvelteKit + TypeScript +
 ## Architecture
 
 - **Client data**: IndexedDB via Dexie.js — all data lives locally, works offline
-- **Server data**: Postgres (not yet wired up — Phase 3)
+- **Server data**: Postgres, synced via `/api/sync/{pull,push,status}` (last-write-wins by `updatedAt`)
 - **Auth**: noegos-auth service via JWT cookie on `.noegosunderwater.com`
 - **Charts**: Observable Plot (replaced hand-rolled SVG, May 2026)
 - **Maps**: MapLibre GL + MapTiler outdoor-v2 (replaced Leaflet, May 2026)
 - **Deployment**: adapter-node behind Caddy at ww-journal.noegosunderwater.com
+- **MCP server**: `/mcp` (Streamable HTTP, stateless) for AI agents. OAuth 2.1 bearer tokens from
+  noegos-auth (audience `<origin>/mcp`, scopes `read`/`write`), verified in `src/lib/server/auth.ts`.
+  Tools in `src/lib/server/mcp.ts`; data ops in `src/lib/server/journal.ts` write via `pushChanges`
+  so they behave exactly like PWA sync. `/mcp` and `/.well-known/*` bypass the cookie hook.
 
 ## Development
 
@@ -18,6 +22,9 @@ npm run dev -- --port 5174
 ```
 
 Auth service must be running on port 5173 for login to work. Set `DEV_BYPASS_AUTH=true` in `.env` to skip auth during development.
+
+Set `MCP_ORIGIN=https://ww-journal.noegosunderwater.com` in production so the MCP resource URL
+is right behind the proxy. With `DEV_BYPASS_AUTH=true`, `/mcp` without a token acts as the dev user.
 
 ## Key Directories
 

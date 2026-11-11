@@ -90,6 +90,20 @@ describe('auth hook — public paths', () => {
 		expect(response.status).toBe(200);
 		expect(vi.mocked(verifyAuthToken)).not.toHaveBeenCalled();
 	});
+
+	it('lets /mcp and OAuth discovery through to their own bearer auth (no login redirect)', async () => {
+		for (const pathname of ['/mcp', '/.well-known/oauth-protected-resource/mcp', '/.well-known/oauth-authorization-server']) {
+			const event = makeEvent({ pathname });
+			const response = await handle({ event, resolve: mockResolve });
+			expect(response.status).toBe(200);
+		}
+		expect(vi.mocked(verifyAuthToken)).not.toHaveBeenCalled();
+	});
+
+	it('does not treat lookalike paths as public', async () => {
+		const event = makeEvent({ pathname: '/mcpanel' });
+		await expect(handle({ event, resolve: mockResolve })).rejects.toMatchObject({ status: 302 });
+	});
 });
 
 // ---------------------------------------------------------------------------
